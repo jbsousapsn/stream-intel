@@ -1469,6 +1469,18 @@ function setModalRegion(region, e) {
   _renderModalPlatformPills(currentModalTitle, _modalSelectedRegion);
 }
 
+// Per-platform search URL builders (used to make platform pills clickable)
+const PLATFORM_WATCH_URLS = {
+  netflix:        q => `https://www.netflix.com/search?q=${encodeURIComponent(q)}`,
+  disney_plus:    q => `https://www.disneyplus.com/search/${encodeURIComponent(q)}`,
+  hbo_max:        q => `https://play.max.com/search?q=${encodeURIComponent(q)}`,
+  apple_tv:       q => `https://tv.apple.com/search?term=${encodeURIComponent(q)}`,
+  prime_video:    q => `https://www.amazon.com/s?k=${encodeURIComponent(q)}&i=prime-instant-video`,
+  hulu:           q => `https://www.hulu.com/search?q=${encodeURIComponent(q)}`,
+  peacock:        q => `https://www.peacocktv.com/search?q=${encodeURIComponent(q)}`,
+  paramount_plus: q => `https://www.paramountplus.com/search?query=${encodeURIComponent(q)}`,
+};
+
 function _renderModalPlatformPills(t, region) {
   const el = document.getElementById('mPlatformPills');
   if (!el) return;
@@ -1495,10 +1507,16 @@ function _renderModalPlatformPills(t, region) {
     return;
   }
 
-  // Title is available → render pills
-  let html = platforms.map(p =>
-    `<span class="modal-platform-pill ${p}">${platLogo(p)}<span>${formatPlatform(p)}</span></span>`
-  ).join('');
+  // Title is available → render pills (as <a> links when a search URL is known)
+  const titleQ = t ? t.title : '';
+  let html = platforms.map(p => {
+    const urlFn = PLATFORM_WATCH_URLS[p];
+    if (urlFn) {
+      const href = escAttr(urlFn(titleQ));
+      return `<a class="modal-platform-pill ${p}" href="${href}" target="_blank" rel="noopener noreferrer">${platLogo(p)}<span>${formatPlatform(p)}</span></a>`;
+    }
+    return `<span class="modal-platform-pill ${p}">${platLogo(p)}<span>${formatPlatform(p)}</span></span>`;
+  }).join('');
 
   // If we auto-selected "all regions" because the preferred region isn't available,
   // show a subtle note so the user understands why their region isn't pre-selected.

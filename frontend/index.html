@@ -442,10 +442,23 @@
     <!-- Fav + status buttons -->
     <div class="modal-actions">
       <button class="modal-fav-btn" id="modalFavBtn" onclick="toggleFavFromModal()">❤️ Add to Favourites</button>
-      <span class="modal-status-label">Status</span>
-      <button class="status-btn-lg" id="sBtn3" onclick="setStatusFromModal('watchlist')">🔖 Watchlist</button>
-      <button class="status-btn-lg" id="sBtn1" onclick="setStatusFromModal('watching')">▶️ Watching</button>
-      <button class="status-btn-lg" id="sBtn2" onclick="setStatusFromModal('finished')">✅ Finished</button>
+      <div class="status-btn-wrap">
+        <span class="modal-status-label">Status</span>
+        <div class="status-btn-group">
+          <button class="status-btn-lg" id="sBtn3" onclick="setStatusFromModal('watchlist')" title="Add to Watchlist">
+            <svg class="status-btn-icon" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h10a1 1 0 011 1v13l-5-2.5L5 16V3a1 1 0 011-1z"/></svg>
+            <span class="status-btn-lbl">Watchlist</span>
+          </button>
+          <button class="status-btn-lg" id="sBtn1" onclick="setStatusFromModal('watching')" title="Mark as Watching">
+            <svg class="status-btn-icon" viewBox="0 0 18 18" fill="currentColor"><polygon points="4,3 16,9 4,15"/></svg>
+            <span class="status-btn-lbl">Watching</span>
+          </button>
+          <button class="status-btn-lg" id="sBtn2" onclick="setStatusFromModal('finished')" title="Mark as Finished">
+            <svg class="status-btn-icon" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,9 7,14 15,4"/></svg>
+            <span class="status-btn-lbl">Finished</span>
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Send to friend button -->

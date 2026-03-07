@@ -1319,7 +1319,12 @@ button, a, input, select, textarea, [onclick], label,
     display: inline-flex; align-items: center; gap: 9px;
     padding: 6px 14px 6px 8px; border-radius: 10px;
     font-size: 13px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
-    border: 1.5px solid; transition: opacity .2s;
+    border: 1.5px solid; text-decoration: none;
+    transition: opacity .15s, transform .15s, box-shadow .15s;
+    cursor: pointer;
+  }
+  .modal-platform-pill[href]:hover {
+    opacity: 0.88; transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,.38);
   }
   .modal-platform-pill.netflix        { background: rgba(229,9,20,.16);    color: #ff4040;  border-color: rgba(229,9,20,.45); }
   .modal-platform-pill.disney_plus    { background: rgba(17,60,207,.16);   color: #6b9aff;  border-color: rgba(17,60,207,.45); }
@@ -1375,14 +1380,27 @@ button, a, input, select, textarea, [onclick], label,
   .modal-fav-btn { padding:9px 20px; border-radius:20px; border:1px solid var(--border); background:transparent; color:var(--muted); font-family:var(--font-body); font-size: 14px; cursor:pointer; transition:all var(--transition); font-weight:600; }
   .modal-fav-btn:hover { border-color:var(--fav); color:var(--fav); }
   .modal-fav-btn.active { border-color:var(--fav); color:var(--fav); background:rgba(244,114,182,.12); }
-  .modal-status-label { font-size: 11px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-left:6px; }
-  .status-btn-lg { padding:9px 16px; border-radius:20px; border:1px solid var(--border); background:transparent; color:var(--muted); font-family:var(--font-body); font-size: 14px; cursor:pointer; transition:all var(--transition); }
-  .status-btn-lg:hover { border-color:var(--text); color:var(--text); }
-  .status-btn-lg:disabled { opacity:0.3; cursor:not-allowed; }
-  .status-btn-lg:disabled:hover { border-color:var(--border); color:var(--muted); background:transparent; }
-  .status-btn-lg.active-watching  { border-color:var(--watching);  color:var(--watching);  background:rgba(96,165,250,.12); }
-  .status-btn-lg.active-finished   { border-color:var(--finished);  color:var(--finished);  background:rgba(52,211,153,.12); }
-  .status-btn-lg.active-watchlist  { border-color:var(--watchlist); color:var(--watchlist); background:rgba(167,139,250,.12); }
+  .modal-status-label { font-size: 11px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); flex-shrink: 0; }
+  /* status segmented control */
+  .status-btn-wrap  { display: flex; align-items: center; gap: 12px; flex-basis: 100%; }
+  .status-btn-group { display: flex; flex: 1; border-radius: 22px; border: 1px solid var(--border); overflow: hidden; }
+  .status-btn-lg {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    flex: 1; padding: 9px 14px;
+    border: none; border-right: 1px solid var(--border);
+    background: transparent; color: var(--muted);
+    font-family: var(--font-body); font-size: 14px;
+    cursor: pointer; transition: all var(--transition);
+    white-space: nowrap; min-width: 0;
+  }
+  .status-btn-lg:last-child { border-right: none; }
+  .status-btn-lg:hover { color: var(--text); background: rgba(255,255,255,.06); }
+  .status-btn-lg:disabled { opacity: 0.35; cursor: not-allowed; }
+  .status-btn-lg:disabled:hover { color: var(--muted); background: transparent; }
+  .status-btn-icon { width: 15px; height: 15px; flex-shrink: 0; pointer-events: none; }
+  .status-btn-lg.active-watching  { color: var(--watching);  background: rgba(96,165,250,.15);  }
+  .status-btn-lg.active-finished  { color: var(--finished);  background: rgba(52,211,153,.15);  }
+  .status-btn-lg.active-watchlist { color: var(--watchlist); background: rgba(167,139,250,.15); }
 
   /* ── Send-to-friend button ── */
   .modal-share-row { padding: 0 500px 20px; }
@@ -2040,8 +2058,14 @@ body.nav-drawer-open { overflow: hidden; }
   }
   .modal-share-row { padding: 0 16px 14px; }
   .modal-share-msg-btn { font-size: 12px; padding: 7px 14px; }
-  .status-btn-lg { padding: 7px 12px; font-size: 13px; }
+  .status-btn-lg { padding: 8px 10px; font-size: 13px; }
   .modal-fav-btn { padding: 7px 14px; font-size: 13px; }
+  .status-btn-wrap { gap: 8px; }
+  /* On very narrow phones, hide text labels and show only icons */
+  @media (max-width: 380px) {
+    .status-btn-lbl { display: none; }
+    .status-btn-lg { padding: 10px 12px; }
+  }
 
   /* tab bar */
   .modal-tabs {
