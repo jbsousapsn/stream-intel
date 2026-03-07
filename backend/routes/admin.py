@@ -83,8 +83,8 @@ def run_scraper(mode: str, regions: str):
         cmd += ["--multi-sort"]
     proxy_url = request.args.get("proxy_url", "").strip()
     if not proxy_url:
-        # Fall back to env var already in clean_env (SCRAPER_PROXY_URL)
-        proxy_url = clean_env.get("SCRAPER_PROXY_URL", "")
+        # Fall back to env var
+        proxy_url = os.environ.get("SCRAPER_PROXY_URL", "")
     if proxy_url:
         cmd += ["--proxy-url", proxy_url]
 
@@ -415,16 +415,55 @@ def upload_db():
     f = request.files.get("db")
     if not f:
         return jsonify({"error": "No file provided"}), 400
-    f.save(str(settings.DB_PATH))
-    # Remove any stale WAL/SHM files left over from the previous database.
-    # If they're not deleted, SQLite detects a checksum mismatch with the
-    # new file and may refuse to open it or silently corrupt data.
+
+    db_path = settings.DB_PATH
+    tmp_path = db_path.with_suffix(".db.tmp")
+
+    # Write to a temp file first so we never leave a half-written DB at the real path.
+    try:
+        f.save(str(tmp_path))
+        saved_size = tmp_path.stat().st_size
+        print(f"[upload-db] received {saved_size:,} bytes → {tmp_path.name}", flush=True)
+    except Exception as exc:
+        return jsonify({"error": f"Failed to save upload: {exc}"}), 500
+
+    # Verify the temp file is a valid SQLite database before swapping it in.
+    try:
+        with sqlite3.connect(str(tmp_path)) as _chk:
+            _chk.execute("PRAGMA integrity_check").fetchone()
+            user_count = _chk.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        print(f"[upload-db] integrity OK, {user_count} users", flush=True)
+    except Exception as exc:
+        tmp_path.unlink(missing_ok=True)
+        return jsonify({"error": f"Uploaded file is not a valid database: {exc}"}), 400
+
+    # Remove stale WAL/SHM sidecars before the swap.
     for suffix in ("-wal", "-shm"):
-        stale = Path(str(settings.DB_PATH) + suffix)
-        if stale.exists():
-            try:
-                stale.unlink()
-                print(f"[upload-db] removed stale {stale.name}", flush=True)
-            except Exception as exc:
-                print(f"[upload-db] could not remove {stale.name}: {exc}", flush=True)
-    return jsonify({"ok": True})
+        for target in (db_path, tmp_path):
+            stale = target.parent / (target.name + suffix)
+            if stale.exists():
+                try:
+                    stale.unlink()
+                    print(f"[upload-db] removed {stale.name}", flush=True)
+                except Exception as exc:
+                    print(f"[upload-db] could not remove {stale.name}: {exc}", flush=True)
+
+    # Atomic rename: tmp → real path.
+    try:
+        tmp_path.replace(db_path)
+        print(f"[upload-db] swapped in new DB ({saved_size:,} bytes)", flush=True)
+    except Exception as exc:
+        tmp_path.unlink(missing_ok=True)
+        return jsonify({"error": f"Failed to replace database: {exc}"}), 500
+
+    # Apply any schema migrations to the freshly-uploaded DB.
+    try:
+        from backend.database import _apply_migrations, SCHEMA
+        with sqlite3.connect(str(db_path)) as _mig:
+            _mig.executescript(SCHEMA)   # ensure all tables exist
+            _apply_migrations(_mig)
+        print("[upload-db] migrations applied", flush=True)
+    except Exception as exc:
+        print(f"[upload-db] migration warning: {exc}", flush=True)
+
+    return jsonify({"ok": True, "users": user_count, "size_bytes": saved_size})

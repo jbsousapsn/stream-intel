@@ -273,11 +273,15 @@ def create_app() -> Flask:
     @app.route("/api/debug")
     def debug_status():
         """Unauthenticated status endpoint — useful for verifying DB and scrape state."""
+        import shutil
         db_path = str(settings.DB_PATH)
         info: dict = {
             "db_path": db_path,
             "db_exists": os.path.exists(db_path),
+            "db_size_mb": 0,
             "db_writable": False,
+            "disk_free_mb": None,
+            "disk_total_mb": None,
             "titles": 0,
             "users": 0,
             "last_scrape": None,
@@ -289,12 +293,18 @@ def create_app() -> Flask:
                 if os.path.exists(db_path)
                 else os.access(parent, os.W_OK)
             )
+            if os.path.exists(db_path):
+                info["db_size_mb"] = round(os.path.getsize(db_path) / 1_048_576, 2)
+            try:
+                usage = shutil.disk_usage(parent)
+                info["disk_free_mb"]  = round(usage.free  / 1_048_576, 1)
+                info["disk_total_mb"] = round(usage.total / 1_048_576, 1)
+            except Exception:
+                pass
             with sqlite3.connect(db_path) as _con:
                 _con.row_factory = sqlite3.Row
-                info["titles"] = _con.execute("SELECT COUNT(*) FROM titles").fetchone()[
-                    0
-                ]
-                info["users"] = _con.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+                info["titles"] = _con.execute("SELECT COUNT(*) FROM titles").fetchone()[0]
+                info["users"]  = _con.execute("SELECT COUNT(*) FROM users").fetchone()[0]
                 row = _con.execute(
                     "SELECT id, started_at, finished_at, mode, status, title_count "
                     "FROM scrape_runs ORDER BY id DESC LIMIT 1"
