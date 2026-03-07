@@ -229,6 +229,7 @@ def scrape_region(
                 label = f"{platform_name}/{type_label}/{sort_by}"
                 log.info(f"   Fetching {label} — {region}")
 
+                retry_wait = 5.0  # seconds to wait after a 403 before retrying
                 while True:
                     page += 1
                     try:
@@ -248,6 +249,7 @@ def scrape_region(
                             )
                             break
 
+                        retry_wait = 5.0  # reset backoff on success
                         titles = parse_titles(raw, platform_name, region, mode, seen)
                         page_info = get_page_info(raw)
                         results.extend(titles)
@@ -263,6 +265,17 @@ def scrape_region(
                         cursor = page_info.get("endCursor")
 
                     except Exception as e:
+                        err_str = str(e)
+                        # 403 / 429: back off and retry once before giving up
+                        if ("403" in err_str or "429" in err_str) and retry_wait <= 30:
+                            log.warning(
+                                f"   {label} page {page} ({region}) rate-limited — "
+                                f"retrying in {retry_wait:.0f}s"
+                            )
+                            time.sleep(retry_wait)
+                            retry_wait = min(retry_wait * 2, 60)
+                            page -= 1  # retry same page
+                            continue
                         log.warning(
                             f"   {label} page {page} failed ({region}): "
                             f"{type(e).__name__}: {e}"
@@ -303,8 +316,15 @@ def run_scrape(
     log.info("=" * 60)
 
     # Each worker thread gets its own requests.Session to avoid sharing state.
-    # We cap parallelism at 4 to stay polite to the JustWatch API.
-    MAX_WORKERS = min(4, len(regions))
+    # Without a proxy, parallel requests from a shared IP (e.g. Railway) will
+    # quickly trigger JustWatch's rate-limiter.  Default to 1 worker so regions
+    # run sequentially; bump to 4 when a residential proxy is configured.
+    MAX_WORKERS = min(4 if PROXY_URL else 1, len(regions))
+    if not PROXY_URL and len(regions) > 1:
+        log.warning(
+            "No SCRAPER_PROXY_URL set — running sequentially (1 worker) to "
+            "avoid JustWatch rate-limits. Set SCRAPER_PROXY_URL for faster scraping."
+        )
     total = 0
 
     def _scrape_one(region: str) -> int:
