@@ -58,7 +58,11 @@ def _compute_stats(db, uid: int) -> dict:
         if r["is_fav"]:
             favs_count += 1
         # Count genres for items the user has engaged with
-        if status in ("finished", "watching") and r["genre"] and r["genre"] != "Unknown":
+        if (
+            status in ("finished", "watching")
+            and r["genre"]
+            and r["genre"] != "Unknown"
+        ):
             for g_name in r["genre"].split(","):
                 g_name = g_name.strip()
                 if g_name:
@@ -81,7 +85,6 @@ def _compute_stats(db, uid: int) -> dict:
             )
 
     movies_finished = len(finished_movies_list)
-
 
     season_rows = db.execute(
         "SELECT title, ep_mask, runtime_mins FROM watched_seasons WHERE user_id=?",
@@ -206,7 +209,9 @@ def get_profile():
             "home_country": user["home_country"] or "",
             "library_public": bool(user["library_public"]),
             "stats": stats,
-            "pic_position_y": int(user["pic_position_y"]) if user["pic_position_y"] is not None else 50,
+            "pic_position_y": int(user["pic_position_y"])
+            if user["pic_position_y"] is not None
+            else 50,
         }
     )
 
@@ -292,7 +297,7 @@ def update_profile():
 @require_auth
 def get_watchtime_titles():
     """Return all user library entries (status != not-started) with per-title watch time."""
-    db  = get_db()
+    db = get_db()
     uid = g.current_user["user_id"]
 
     # Library entries joined with title metadata
@@ -318,34 +323,43 @@ def get_watchtime_titles():
            GROUP BY LOWER(title)""",
         (uid,),
     ).fetchall()
-    tv_time_map = {r["title"].lower(): {"mins": r["total_runtime"] or 0, "eps": r["ep_count"]} for r in tv_rows}
+    tv_time_map = {
+        r["title"].lower(): {"mins": r["total_runtime"] or 0, "eps": r["ep_count"]}
+        for r in tv_rows
+    }
 
     results = []
     for r in lib_rows:
-        ct     = (r["content_type"] or "movie").lower()
+        ct = (r["content_type"] or "movie").lower()
         status = r["status"] or "not-started"
         if ct == "movie":
-            mins = (r["runtime_mins"] or FALLBACK_MOVIE_MINS) if status == "finished" else 0
-            eps  = 0
+            mins = (
+                (r["runtime_mins"] or FALLBACK_MOVIE_MINS)
+                if status == "finished"
+                else 0
+            )
+            eps = 0
         else:
-            td   = tv_time_map.get((r["title"] or "").lower(), {})
+            td = tv_time_map.get((r["title"] or "").lower(), {})
             if td.get("mins"):
                 mins = td["mins"]
             else:
                 mins = (td.get("eps", 0)) * (r["runtime_mins"] or FALLBACK_EPISODE_MINS)
             eps = td.get("eps", 0)
 
-        results.append({
-            "platform":     r["platform"],
-            "title":        r["title"],
-            "status":       status,
-            "content_type": ct,
-            "genre":        r["genre"] or "",
-            "imdb_score":   r["imdb_score"] or 0,
-            "release_year": r["release_year"] or "",
-            "watch_mins":   mins,
-            "episodes_watched": eps,
-        })
+        results.append(
+            {
+                "platform": r["platform"],
+                "title": r["title"],
+                "status": status,
+                "content_type": ct,
+                "genre": r["genre"] or "",
+                "imdb_score": r["imdb_score"] or 0,
+                "release_year": r["release_year"] or "",
+                "watch_mins": mins,
+                "episodes_watched": eps,
+            }
+        )
 
         if not results:
             results = []
@@ -356,15 +370,18 @@ def get_watchtime_titles():
 @require_auth
 def get_watchtime_stats():
     """Debug: show library/watchtime counts for the current user."""
-    db  = get_db()
+    db = get_db()
     uid = g.current_user["user_id"]
-    total = db.execute("SELECT COUNT(*) FROM library WHERE user_id=?", (uid,)).fetchone()[0]
+    total = db.execute(
+        "SELECT COUNT(*) FROM library WHERE user_id=?", (uid,)
+    ).fetchone()[0]
     active = db.execute(
         "SELECT COUNT(*) FROM library WHERE user_id=? AND status != 'not-started' AND status IS NOT NULL",
         (uid,),
     ).fetchone()[0]
     statuses = [
-        dict(r) for r in db.execute(
+        dict(r)
+        for r in db.execute(
             "SELECT status, COUNT(*) as n FROM library WHERE user_id=? GROUP BY status",
             (uid,),
         ).fetchall()
@@ -372,10 +389,12 @@ def get_watchtime_stats():
     ws = db.execute(
         "SELECT COUNT(*) FROM watched_seasons WHERE user_id=?", (uid,)
     ).fetchone()[0]
-    return jsonify({
-        "user_id": uid,
-        "library_total":  total,
-        "library_active": active,
-        "library_by_status": statuses,
-        "watched_seasons_rows": ws,
-    })
+    return jsonify(
+        {
+            "user_id": uid,
+            "library_total": total,
+            "library_active": active,
+            "library_by_status": statuses,
+            "watched_seasons_rows": ws,
+        }
+    )

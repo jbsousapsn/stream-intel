@@ -341,7 +341,9 @@ def run_scrape(
             _start_index[0] += 1
         if idx > 0 and PROXY_URL:
             stagger = idx * WORKER_STAGGER
-            log.info(f"   [{region}] Staggering start by {stagger}s to avoid simultaneous proxy hits")
+            log.info(
+                f"   [{region}] Staggering start by {stagger}s to avoid simultaneous proxy hits"
+            )
             time.sleep(stagger)
         session = make_session(proxy=PROXY_URL)
         warm_session(session)

@@ -22,9 +22,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BASE         = os.getenv("RAILWAY_URL", "https://stream-intel.up.railway.app")
-SECRET       = os.getenv("MIGRATION_SECRET", "boaspessoal213")
-LOCAL_DB     = Path(__file__).parent / "stream_intel_local.db"
+BASE = os.getenv("RAILWAY_URL", "https://stream-intel.up.railway.app")
+SECRET = os.getenv("MIGRATION_SECRET", "boaspessoal213")
+LOCAL_DB = Path(__file__).parent / "stream_intel_local.db"
 
 
 def run_scrape(mode: str, regions: list[str]) -> None:
@@ -35,9 +35,12 @@ def run_scrape(mode: str, regions: list[str]) -> None:
     os.environ["SCRAPER_PROXY_URL"] = ""
 
     import backend.scraper.runner as _runner
+
     _runner.PROXY_URL = None  # force no proxy — use local residential IP
 
-    print(f"\n[local] Scraping mode={mode} regions={regions or 'ALL'} (no proxy — local IP)")
+    print(
+        f"\n[local] Scraping mode={mode} regions={regions or 'ALL'} (no proxy — local IP)"
+    )
     target_regions = regions if regions else _runner.DEFAULT_REGIONS
     _runner.run_scrape(mode=mode, regions=target_regions, db_path=LOCAL_DB)
     print(f"\n[local] Done. Results in {LOCAL_DB}")
@@ -45,7 +48,9 @@ def run_scrape(mode: str, regions: list[str]) -> None:
 
 def push_db() -> None:
     if not LOCAL_DB.exists():
-        print(f"[push] ERROR: {LOCAL_DB} not found — run a scrape first.", file=sys.stderr)
+        print(
+            f"[push] ERROR: {LOCAL_DB} not found — run a scrape first.", file=sys.stderr
+        )
         sys.exit(1)
 
     size_mb = LOCAL_DB.stat().st_size / 1_048_576
@@ -68,10 +73,16 @@ def push_db() -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Scrape locally and push titles to Railway")
+    parser = argparse.ArgumentParser(
+        description="Scrape locally and push titles to Railway"
+    )
     parser.add_argument("--mode", choices=["trending", "catalog", "all"], default="all")
-    parser.add_argument("--regions", nargs="+", default=None, help="ISO codes, default=ALL")
-    parser.add_argument("--push-only", action="store_true", help="Skip scrape, just push existing DB")
+    parser.add_argument(
+        "--regions", nargs="+", default=None, help="ISO codes, default=ALL"
+    )
+    parser.add_argument(
+        "--push-only", action="store_true", help="Skip scrape, just push existing DB"
+    )
     args = parser.parse_args()
 
     if not args.push_only:

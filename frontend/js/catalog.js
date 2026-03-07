@@ -58,6 +58,7 @@ let allTitles         = [];   // deduplicated titles loaded from server
 let serverTotal       = 0;    // total rows matching current server-side filters
 let libraryMap        = {};   // "platform::title_lower" -> { is_fav, status, notes, user_rating }
 let activeType        = 'all';
+let activeStatusFilter = 'all'; // status sub-filter: 'all'|'favourites'|'watchlist'|'watching'|'finished'
 let activePlatform    = 'all';
 let activeRegion      = 'all';
 let trendingContentType = 'all'; // 'all' | 'movie' | 'tv' — sub-filter on Trending tab
@@ -497,6 +498,13 @@ let _actorGen        = 0;  // generation counter — incremented on each new loa
 const TMDB_IMG_BASE  = 'https://image.tmdb.org/t/p';
 
 function setView(view, el, contentTypeFilter) {
+  // Intercept status views: route to 'all' and set the status sub-filter instead
+  const _STATUS_VIEWS = new Set(['favourites','watchlist','watching','finished']);
+  if (_STATUS_VIEWS.has(view)) {
+    setView('all', document.querySelector('.nav-tab[data-view="all"]'), contentTypeFilter);
+    setStatusFilter(view, null);
+    return;
+  }
   // Reset content-type filter unless explicitly provided (e.g. from profile stat cards)
   activeContentTypeFilter = (contentTypeFilter !== undefined) ? contentTypeFilter : null;
   if (!_handlingPop) history.pushState({ view }, '');
@@ -520,6 +528,16 @@ function setView(view, el, contentTypeFilter) {
     });
   }
   if (isLibraryView) _lastLibraryView = view;
+  // Status sub-bar: show on main content views (All/Movies/TV/Trending), reset filter when switching away
+  const statusSubBar = document.getElementById('statusSubBar');
+  const isMainContent = ['all','movie','tv','trending'].includes(view);
+  if (statusSubBar) {
+    statusSubBar.style.display = isMainContent ? '' : 'none';
+    if (!isMainContent) {
+      activeStatusFilter = 'all';
+      statusSubBar.querySelectorAll('.library-sub-tab').forEach(t => t.classList.toggle('active', t.dataset.sf === 'all'));
+    }
+  }
   // Mobile page title
   const _mpt = document.getElementById('mobilePageTitle');
   if (_mpt) {
@@ -564,6 +582,15 @@ function setTypeFilter(type, el) {
   const tab = document.querySelector(`.nav-tab[data-view="${type}"]`);
   setView(type, tab || el);
 }
+
+function setStatusFilter(status, el) {
+  activeStatusFilter = status;
+  document.querySelectorAll('#statusSubBar .library-sub-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.sf === status)
+  );
+  applyFilters();
+}
+window.setStatusFilter = setStatusFilter;
 
 function setTrendingTypeFilter(type) {
   if (trendingContentType === type) return;
@@ -1071,9 +1098,9 @@ const PLATFORM_LOGOS = {
   hbo_max:        `<svg class="plat-logo" viewBox="0 0 18 18" aria-hidden="true"><rect width="18" height="18" rx="3" fill="#6a23e2"/><text x="9" y="12" text-anchor="middle" font-size="6" font-weight="900" font-family="Arial,sans-serif" fill="white">MAX</text></svg>`,
   apple_tv:       `<svg class="plat-logo" viewBox="0 0 18 18" aria-hidden="true"><rect width="18" height="18" rx="3" fill="#1c1c1e" stroke="rgba(255,255,255,.2)" stroke-width="1"/><text x="9" y="10.5" text-anchor="middle" font-size="4.5" font-weight="400" font-family="Arial,sans-serif" fill="white">Apple</text><text x="9" y="15.5" text-anchor="middle" font-size="5" font-weight="700" font-family="Arial,sans-serif" fill="white">TV+</text></svg>`,
   prime_video:    `<svg class="plat-logo" viewBox="0 0 18 18" aria-hidden="true"><rect width="18" height="18" rx="3" fill="#00a8e1"/><text x="9" y="10.5" text-anchor="middle" font-size="4.5" font-weight="700" font-family="Arial,sans-serif" fill="white">prime</text><text x="9" y="15.5" text-anchor="middle" font-size="5.5" font-weight="700" font-family="Arial,sans-serif" fill="#ff9900">video</text></svg>`,
-  hulu:           `<svg class="plat-logo" viewBox="0 0 18 18" aria-hidden="true"><rect width="18" height="18" rx="3" fill="#1a1a1a"/><text x="9" y="12.5" text-anchor="middle" font-size="6" font-weight="900" font-family="Arial,sans-serif" fill="#1ce783">hulu</text></svg>`,
-  peacock:        `<svg class="plat-logo" viewBox="0 0 18 18" aria-hidden="true"><rect width="18" height="18" rx="3" fill="#0b1320"/><text x="9" y="10.5" text-anchor="middle" font-size="5" font-weight="700" font-family="Arial,sans-serif" fill="#f8be00">pea</text><text x="9" y="15.5" text-anchor="middle" font-size="5" font-weight="700" font-family="Arial,sans-serif" fill="#f8be00">cock</text></svg>`,
-  paramount_plus: `<svg class="plat-logo" viewBox="0 0 18 18" aria-hidden="true"><rect width="18" height="18" rx="3" fill="#0064ff"/><text x="9" y="12.5" text-anchor="middle" font-size="8" font-weight="900" font-family="Arial,sans-serif" fill="white">P+</text></svg>`,
+  hulu:           `<svg class="plat-logo" viewBox="0 0 18 18" aria-hidden="true"><rect width="18" height="18" rx="3" fill="#1CE783"/><text x="9" y="12" text-anchor="middle" font-size="6.5" font-weight="900" font-family="Arial,sans-serif" fill="#0a0a0a">hulu</text></svg>`,
+  peacock:        `<svg class="plat-logo" viewBox="0 0 18 18" aria-hidden="true"><rect width="18" height="18" rx="3" fill="#0d0d0d"/><g transform="translate(9,14)"><ellipse cx="0" cy="-4" rx="1" ry="4.2" transform="rotate(-75)" fill="#E8001D"/><ellipse cx="0" cy="-4" rx="1" ry="4.2" transform="rotate(-45)" fill="#FA8B1D"/><ellipse cx="0" cy="-4" rx="1" ry="4.2" transform="rotate(-15)" fill="#FDD900"/><ellipse cx="0" cy="-4" rx="1" ry="4.2" transform="rotate(15)"  fill="#00B050"/><ellipse cx="0" cy="-4" rx="1" ry="4.2" transform="rotate(45)"  fill="#0065BE"/><ellipse cx="0" cy="-4" rx="1" ry="4.2" transform="rotate(75)"  fill="#7B2D8B"/></g></svg>`,
+  paramount_plus: `<svg class="plat-logo" viewBox="0 0 18 18" aria-hidden="true"><rect width="18" height="18" rx="3" fill="#0064FF"/><path d="M0 18 L0 13 C3 8 6 6 9 5.5 C12 6 15 8 18 13 L18 18 Z" fill="white"/><text x="2.5" y="11" font-size="2.6" fill="white" font-family="Arial,sans-serif">★★★★★</text><text x="9" y="16.5" text-anchor="middle" font-size="4.5" font-weight="900" font-family="Arial,sans-serif" fill="#0064FF">P+</text></svg>`,
 };
 // Overridden once real TMDB logos are loaded
 let _realLogoUrls = {};
@@ -1223,13 +1250,15 @@ function _applyFiltersNow() {
     if (activeContentTypeFilter === 'tv'    && t.content_type !== 'tv')    return false;
     // Trending titles are filtered server-side (?trending=1); this is a safety-net fallback
     if (activeType==='trending'   && !(t.ranking_position > 0)) return false;
-    if (activeType==='favourites' && !entry.is_fav)              return false;
-    if (activeType==='watchlist'  && entry.status!=='watchlist')  return false;
-    if (activeType==='watching'   && entry.status!=='watching')   return false;
-    if (activeType==='finished'   && entry.status!=='finished')   return false;
-    if (activeType==='library'    && !entry.is_fav && entry.status!=='watchlist' && entry.status!=='watching' && entry.status!=='finished') return false;
+    // Use activeStatusFilter (from status sub-bar) when set, otherwise fall back to activeType
+    const _effectiveSF = activeStatusFilter !== 'all' ? activeStatusFilter : activeType;
+    if (_effectiveSF==='favourites' && !entry.is_fav)              return false;
+    if (_effectiveSF==='watchlist'  && entry.status!=='watchlist')  return false;
+    if (_effectiveSF==='watching'   && entry.status!=='watching')   return false;
+    if (_effectiveSF==='finished'   && entry.status!=='finished')   return false;
+    if (_effectiveSF==='library'    && !entry.is_fav && entry.status!=='watchlist' && entry.status!=='watching' && entry.status!=='finished') return false;
     // Hide low-vote titles unless user is searching or browsing their personal lists
-    const isPersonalView = ['library','favourites','watchlist','watching','finished'].includes(activeType);
+    const isPersonalView = activeStatusFilter !== 'all' || ['library','favourites','watchlist','watching','finished'].includes(activeType);
     if (!q && !isPersonalView && (t.imdb_votes||0) < 10000) return false;
     if (q && !t.title.toLowerCase().includes(q) && !_actorEnrichedTitleKeys.has(titleKey(t))) return false;
     if (minVotes>0 && (t.imdb_votes||0)<minVotes) return false;
@@ -1271,9 +1300,9 @@ function _applyFiltersNow() {
   _statsDirty    = true;
 
   renderGrid(filtered);
-  const STATUS_VIEWS = new Set(['favourites','watchlist','watching','finished']);
+  const _SF_VIEWS = new Set(['favourites','watchlist','watching','finished']);
   const statsWrap = document.querySelector('.header-stats');
-  if (statsWrap) statsWrap.style.visibility = STATUS_VIEWS.has(activeType) ? '' : 'hidden';
+  if (statsWrap) statsWrap.style.visibility = (_SF_VIEWS.has(activeType) || _SF_VIEWS.has(activeStatusFilter)) ? '' : 'hidden';
   document.getElementById('statsCount').textContent = filtered.length.toLocaleString();
 
   // People search — run async whenever user types a query of 3+ chars

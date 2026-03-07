@@ -593,11 +593,15 @@ def init_db():
             # and start fresh so the app can at least boot.  The clean DB can
             # then be re-uploaded via /api/upload-db.
             from datetime import datetime as _dt
+
             ts = _dt.now().strftime("%Y%m%d_%H%M%S")
             bak = settings.DB_PATH.with_name(f"{settings.DB_PATH.stem}_corrupt_{ts}.db")
             try:
                 settings.DB_PATH.rename(bak)
-                print(f"[DB] Malformed DB renamed to {bak.name} — original error: {exc}", flush=True)
+                print(
+                    f"[DB] Malformed DB renamed to {bak.name} — original error: {exc}",
+                    flush=True,
+                )
             except Exception as rename_exc:
                 print(f"[DB] Could not rename malformed DB: {rename_exc}", flush=True)
                 settings.DB_PATH.unlink(missing_ok=True)
@@ -607,4 +611,7 @@ def init_db():
                 conn.executescript(SCHEMA)
             with sqlite3.connect(str(settings.DB_PATH)) as conn:
                 _apply_migrations(conn)
-            print("[DB] Fresh DB created after corruption recovery. Re-upload your data via /api/upload-db.", flush=True)
+            print(
+                "[DB] Fresh DB created after corruption recovery. Re-upload your data via /api/upload-db.",
+                flush=True,
+            )

@@ -8,12 +8,13 @@ the 38 MB catalog data that re-populates itself via auto-scrape.
 Run from the project root:
     python export_user_data.py
 """
+
 import shutil
 import sqlite3
 from pathlib import Path
 
-SRC  = Path(__file__).parent / "stream_intel_migrated.db"
-OUT  = Path(__file__).parent / "stream_intel_users.db"
+SRC = Path(__file__).parent / "stream_intel_migrated.db"
+OUT = Path(__file__).parent / "stream_intel_users.db"
 
 # These are the tables whose rows we want to keep.
 # Everything else (titles, poster_cache, tmdb_show_cache, …) will be empty
@@ -40,12 +41,15 @@ print(f"Copying {SRC.name} → {OUT.name} …")
 shutil.copy2(SRC, OUT)
 
 with sqlite3.connect(str(OUT)) as con:
-    con.execute("PRAGMA journal_mode=DELETE")   # switch off WAL before cleanup
+    con.execute("PRAGMA journal_mode=DELETE")  # switch off WAL before cleanup
 
     # Get the full list of tables present
-    all_tables = [r[0] for r in con.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    ).fetchall()]
+    all_tables = [
+        r[0]
+        for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    ]
 
     # Delete bulk data from tables we don't need
     for t in all_tables:
@@ -56,9 +60,11 @@ with sqlite3.connect(str(OUT)) as con:
             print(f"  Cleared {t}")
 
     con.commit()
-    con.execute("VACUUM")   # reclaim freed pages → tiny file
+    con.execute("VACUUM")  # reclaim freed pages → tiny file
 
 size_MB = OUT.stat().st_size / 1_048_576
 print(f"\nDone.  {OUT.name} = {size_MB:.2f} MB")
 print()
-print("Next step: run   python teste123.py   (after updating DB_FILE path to stream_intel_users.db)")
+print(
+    "Next step: run   python teste123.py   (after updating DB_FILE path to stream_intel_users.db)"
+)
