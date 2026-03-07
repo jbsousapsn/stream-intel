@@ -28,14 +28,18 @@ LOCAL_DB     = Path(__file__).parent / "stream_intel_local.db"
 
 
 def run_scrape(mode: str, regions: list[str]) -> None:
-    # Always scrape without proxy locally — your residential IP won't be rate-limited.
-    # Clear the env var before importing runner so PROXY_URL resolves to None.
-    os.environ.pop("SCRAPER_PROXY_URL", None)
+    # runner.py calls load_dotenv() at import time, which would restore
+    # SCRAPER_PROXY_URL from .env even if we popped it.  Set it to "" first
+    # (load_dotenv won't override an already-set var), then patch the module
+    # attribute directly to be sure.
+    os.environ["SCRAPER_PROXY_URL"] = ""
 
-    print(f"\n[local] Scraping mode={mode} regions={regions or 'ALL'} (no proxy)")
-    from backend.scraper.runner import DEFAULT_REGIONS, run_scrape as _run2
-    target_regions = regions if regions else DEFAULT_REGIONS
-    _run2(mode=mode, regions=target_regions, db_path=LOCAL_DB)
+    import backend.scraper.runner as _runner
+    _runner.PROXY_URL = None  # force no proxy — use local residential IP
+
+    print(f"\n[local] Scraping mode={mode} regions={regions or 'ALL'} (no proxy — local IP)")
+    target_regions = regions if regions else _runner.DEFAULT_REGIONS
+    _runner.run_scrape(mode=mode, regions=target_regions, db_path=LOCAL_DB)
     print(f"\n[local] Done. Results in {LOCAL_DB}")
 
 
