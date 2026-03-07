@@ -212,10 +212,6 @@
         <button class="nav-tab"        data-view="tv"         onclick="setView('tv',this)">📺 TV</button>
         <button class="nav-tab"        data-view="trending"   onclick="setView('trending',this)">🔥 Trending</button>
         <button class="nav-tab"        data-view="discover"   onclick="setView('discover',this)">🧭 Discover</button>
-        <button class="nav-tab fav-tab" data-view="favourites" onclick="setView('favourites',this)">❤️ Favourites</button>
-        <button class="nav-tab"        data-view="watchlist"  onclick="setView('watchlist',this)">🔖 Watchlist</button>
-        <button class="nav-tab"        data-view="watching"   onclick="setView('watching',this)">▶️ Watching</button>
-        <button class="nav-tab"        data-view="finished"   onclick="setView('finished',this)">✅ Finished</button>
         <button class="nav-tab"        data-view="upcoming"  onclick="setView('upcoming',this)">📅 Upcoming</button>
         <button class="nav-tab"        data-view="actors"    onclick="setView('actors',this)">🎭 Actors</button>
         <button class="nav-tab"        data-view="stats"      id="statsNavTab" style="display:none" onclick="setView('stats',this)">📊 Stats</button>
@@ -229,6 +225,15 @@
       <button class="library-sub-tab" data-lsub="watching"   onclick="setView('watching',this)">▶️ Watching</button>
       <button class="library-sub-tab" data-lsub="finished"   onclick="setView('finished',this)">✅ Finished</button>
     </div>
+
+      <!-- Status filter sub-bar (visible when on All/Movies/TV/Trending views) -->
+      <div class="library-sub-bar" id="statusSubBar">
+        <button class="library-sub-tab active" data-sf="all"        onclick="setStatusFilter('all',this)">📚 All</button>
+        <button class="library-sub-tab"        data-sf="favourites" onclick="setStatusFilter('favourites',this)">❤️ Favourites</button>
+        <button class="library-sub-tab"        data-sf="watchlist"  onclick="setStatusFilter('watchlist',this)">🔖 Watchlist</button>
+        <button class="library-sub-tab"        data-sf="watching"   onclick="setStatusFilter('watching',this)">▶️ Watching</button>
+        <button class="library-sub-tab"        data-sf="finished"   onclick="setStatusFilter('finished',this)">✅ Finished</button>
+      </div>
 
       <!-- ── Sub-toolbar (filters, shown for content views) ── -->
       <div class="toolbar" id="subToolbar">

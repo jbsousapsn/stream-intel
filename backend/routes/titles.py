@@ -644,6 +644,9 @@ _PLATFORM_PROVIDER_IDS = {
     "disney_plus": 337,
     "apple_tv": 350,
     "hbo_max": 1899,  # Max (formerly HBO Max)
+    "hulu": 15,
+    "peacock": 386,
+    "paramount_plus": 531,
 }
 
 
