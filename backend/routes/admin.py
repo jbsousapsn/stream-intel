@@ -1,9 +1,11 @@
 # backend/routes/admin.py
 import json
 import os
+import queue as _queue
 import sqlite3
 import subprocess
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -133,10 +135,28 @@ def run_scraper(mode: str, regions: str):
                 env=clean_env,
                 cwd=str(settings.BASE_DIR),
             )
-            for line in proc.stdout:
-                line = line.rstrip()
+
+            # Read subprocess output via a queue so we can send SSE heartbeat
+            # comments when the process is silent, preventing Railway's proxy
+            # from dropping the connection due to an idle timeout.
+            msg_q = _queue.Queue()
+            def _reader(p, q):
+                for ln in p.stdout:
+                    q.put(ln.rstrip())
+                q.put(None)
+            threading.Thread(target=_reader, args=(proc, msg_q), daemon=True).start()
+
+            while True:
+                try:
+                    line = msg_q.get(timeout=20)
+                except _queue.Empty:
+                    yield ": ping\n\n"  # SSE comment keeps proxy connection alive
+                    continue
+                if line is None:
+                    break
                 if line:
                     yield f"data: {line}\n\n"
+
             proc.wait()
 
             # Update the run record with final status and title count
@@ -201,10 +221,25 @@ def run_enrich():
                 env=clean_env,
                 cwd=str(settings.BASE_DIR),
             )
-            for line in proc.stdout:
-                line = line.rstrip()
+
+            msg_q = _queue.Queue()
+            def _reader(p, q):
+                for ln in p.stdout:
+                    q.put(ln.rstrip())
+                q.put(None)
+            threading.Thread(target=_reader, args=(proc, msg_q), daemon=True).start()
+
+            while True:
+                try:
+                    line = msg_q.get(timeout=20)
+                except _queue.Empty:
+                    yield ": ping\n\n"
+                    continue
+                if line is None:
+                    break
                 if line:
                     yield f"data: {line}\n\n"
+
             proc.wait()
         except Exception as e:
             yield f"data: ERROR: {e}\n\n"
