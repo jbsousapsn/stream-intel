@@ -438,8 +438,7 @@ async function importJson() {
 }
 
 async function downloadDb() {
-  const token = localStorage.getItem('token');
-  const res = await fetch('/api/download-db', { headers: { Authorization: 'Bearer ' + token } });
+  const res = await fetch('/api/download-db', { credentials: 'same-origin' });
   if (!res.ok) { appendLog('Download failed: ' + res.status, 'err'); return; }
   const blob = await res.blob();
   const a = document.createElement('a');

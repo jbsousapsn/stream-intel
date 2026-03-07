@@ -392,3 +392,28 @@ def download_db():
     return send_file(
         settings.DB_PATH, as_attachment=True, download_name="stream_intel.db"
     )
+
+
+@bp.route("/upload-db", methods=["POST"])
+def upload_db():
+    # Allow either an authenticated admin OR a one-time migration secret
+    migration_secret = os.environ.get("MIGRATION_SECRET", "")
+    provided_secret = request.headers.get("X-Migration-Secret", "")
+    if not (migration_secret and provided_secret and migration_secret == provided_secret):
+        # Fall back to normal admin auth
+        if not g.get("current_user"):
+            from backend.auth import verify_token, _extract_token
+            user = verify_token(_extract_token())
+            if not user:
+                return jsonify({"error": "Authentication required"}), 401
+            g.current_user = user
+        db = get_db()
+        uid = g.current_user["user_id"]
+        row = db.execute("SELECT is_admin FROM users WHERE id=?", (uid,)).fetchone()
+        if not row or not row["is_admin"]:
+            return jsonify({"error": "Admin access required"}), 403
+    f = request.files.get("db")
+    if not f:
+        return jsonify({"error": "No file provided"}), 400
+    f.save(str(settings.DB_PATH))
+    return jsonify({"ok": True})
