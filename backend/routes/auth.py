@@ -2,6 +2,7 @@
 import sqlite3
 import os
 import time
+import json as _json
 import httpx
 from urllib.parse import urlencode
 from flask import Blueprint, g, jsonify, request, make_response
@@ -201,9 +202,10 @@ def google_callback():
         resp.headers["Content-Type"] = "text/html; charset=utf-8"
         return resp
 
-    import html as _html
-
-    safe_code = _html.escape(code, quote=True)
+    # json.dumps produces a valid JSON/JS string literal with correct escaping
+    # for all characters (slashes, backslashes, quotes).  _html.escape is for
+    # HTML attribute context only and is wrong here.
+    safe_code_js = _json.dumps(code)  # e.g. '"4/0Afr..."'
     page = (
         "<!doctype html><html><head><meta charset='utf-8'><title>Signing in…</title>"
         "<style>body{font-family:sans-serif;display:flex;flex-direction:column;"
@@ -217,13 +219,17 @@ def google_callback():
         f"    const r = await fetch('/api/auth/google-exchange', {{\n"
         "      method: 'POST', credentials: 'include',\n"
         "      headers: {'Content-Type': 'application/json'},\n"
-        f"      body: JSON.stringify({{code: '{safe_code}'}})\n"
+        f"      body: JSON.stringify({{code: {safe_code_js}}})\n"
         "    });\n"
-        "    const d = await r.json();\n"
+        # Read as text first so a non-JSON body (Railway 502, Flask 500 HTML page)
+        # never causes an opaque JSON SyntaxError — we surface a real message instead.
+        "    const text = await r.text();\n"
+        "    let d;\n"
+        "    try { d = JSON.parse(text); } catch { d = {error: r.ok ? 'Unexpected server response' : ('HTTP ' + r.status)}; }\n"
         "    if (d.ok) { window.location.replace('/'); }\n"
         "    else { document.getElementById('msg').textContent = 'Login failed: ' + (d.error || 'Unknown error'); }\n"
         "  } catch (e) {\n"
-        "    document.getElementById('msg').textContent = 'Network error: ' + e.message;\n"
+        "    document.getElementById('msg').textContent = 'Sign-in failed: ' + e.message;\n"
         "  }\n"
         "})();\n"
         "</script></body></html>"
