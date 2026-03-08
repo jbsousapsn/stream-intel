@@ -240,6 +240,17 @@ def create_app() -> Flask:
     def serve_ui(path):
         from flask import make_response
 
+        # .well-known/* must be served as files — explicit fast-path so
+        # assetlinks.json (required for TWA verification) is never shadowed
+        # by the index.html fallback below.
+        if path.startswith(".well-known/"):
+            wk_path = settings.UI_DIR / path
+            if wk_path.exists():
+                return send_from_directory(str(settings.UI_DIR), path,
+                                           mimetype="application/json")
+            from flask import abort
+            abort(404)
+
         target = settings.UI_DIR / path
         if path and target.exists():
             resp = make_response(send_from_directory(str(settings.UI_DIR), path))

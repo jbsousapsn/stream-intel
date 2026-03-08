@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.streamintel.app",
+        "sha256_cert_fingerprints": ["31:78:25:45:EE:E3:F8:B2:01:8A:04:7A:6F:49:D5:E0:67:00:B9:8B:74:A0:6D:99:20:DB:BA:02:C7:C9:C5:6C"]
+      }
+    }]
