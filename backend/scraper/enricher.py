@@ -70,17 +70,23 @@ def _enrich_one(t: dict, api_key: str) -> None:
         )
         num_seasons = det.get("number_of_seasons")
         if num_seasons is not None:
-            # Count only seasons that have already aired (air_date in the past),
-            # ignoring Season 0 (Specials) and future/unannounced seasons.
-            from datetime import date
-            today = date.today().isoformat()
-            aired = [
-                s for s in det.get("seasons", [])
-                if s.get("season_number", 0) > 0
-                and s.get("air_date")
-                and s["air_date"] <= today
-            ]
-            t["num_seasons"] = len(aired) if aired else int(num_seasons)
+            # Use last_episode_to_air.season_number — this is the most reliable
+            # indicator: it's the last season that has at least one aired episode,
+            # so future/announced-only seasons are never counted.
+            last_aired = (det.get("last_episode_to_air") or {}).get("season_number")
+            if last_aired:
+                t["num_seasons"] = int(last_aired)
+            else:
+                # Fallback: count seasons with a past air_date (ignores Season 0)
+                from datetime import date
+                today = date.today().isoformat()
+                aired = [
+                    s for s in det.get("seasons", [])
+                    if s.get("season_number", 0) > 0
+                    and s.get("air_date")
+                    and s["air_date"] <= today
+                ]
+                t["num_seasons"] = len(aired) if aired else int(num_seasons)
     else:
         runtime = det.get("runtime")
     if runtime and not t.get("runtime_mins"):
