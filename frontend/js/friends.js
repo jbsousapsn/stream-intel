@@ -114,7 +114,17 @@ function _maybeShowPushBanner() {
     _initPush();
     return;
   }
-  // permission === 'default' — must wait for a user gesture (required on iOS)
+  // On some Android TWA/WebAPK builds Notification.permission can return
+  // 'default' even after the user already granted it (permission state is
+  // not reliably bridged across cold starts). Check our own localStorage
+  // flag to avoid re-prompting users who already subscribed or dismissed.
+  const pushFlag = localStorage.getItem('push_subscribed');
+  if (pushFlag === '1') {
+    _initPush();
+    return;
+  }
+  if (pushFlag === 'dismissed') return;
+  // permission === 'default' and never subscribed — must wait for a user gesture
   document.getElementById('notifPushPrompt')?.classList.remove('hidden');
 }
 
@@ -125,6 +135,8 @@ async function enablePushFromPrompt() {
 
 function dismissPushPrompt() {
   document.getElementById('notifPushPrompt')?.classList.add('hidden');
+  // Remember the dismissal so we don't re-prompt on every app open.
+  localStorage.setItem('push_subscribed', 'dismissed');
 }
 
 async function _initPush() {
@@ -157,6 +169,7 @@ async function _initPush() {
     const result = await api('POST', '/api/push/subscribe', sub.toJSON());
     if (result?.ok) {
       localStorage.setItem('vapid_pub_key', publicKey);
+      localStorage.setItem('push_subscribed', '1');
       console.log('[push] subscription saved to backend');
     } else {
       console.warn('[push] subscribe response:', result);
