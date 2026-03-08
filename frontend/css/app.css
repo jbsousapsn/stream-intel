@@ -1314,6 +1314,7 @@ button, a, input, select, textarea, [onclick], label,
     background:
       linear-gradient(to right,  rgba(19,21,26,.92) 0%, rgba(19,21,26,.55) 35%, rgba(19,21,26,.1) 62%, transparent 100%),
       linear-gradient(to bottom, transparent 30%, rgba(19,21,26,.55) 72%, var(--bg) 100%);
+    pointer-events: none;
   }
   /* poster floats in hero bottom-left */
   .modal-hero-poster {
@@ -3566,3 +3567,12 @@ img.plat-logo { width: 16px; height: 16px; object-fit: contain; border-radius: 3
 }
 #mHeroImg { cursor: zoom-in; }
 #mPosterImg { cursor: zoom-in; }
+.img-lightbox-close {
+  position: fixed; top: 16px; right: 16px; z-index: 3001;
+  background: rgba(0,0,0,.6); border: none; color: #fff;
+  width: 38px; height: 38px; border-radius: 50%;
+  font-size: 18px; cursor: pointer; display: flex;
+  align-items: center; justify-content: center;
+  transition: background .18s;
+}
+.img-lightbox-close:hover { background: rgba(255,255,255,.18); }

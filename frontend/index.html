@@ -808,7 +808,7 @@
     <button class="nav-drawer-item"        data-view="movie"      onclick="setView('movie',this);closeNavDrawer()">🎬 Movies</button>
     <button class="nav-drawer-item"        data-view="tv"         onclick="setView('tv',this);closeNavDrawer()">📺 TV Shows</button>
     <button class="nav-drawer-item"        data-view="trending"   onclick="setView('trending',this);closeNavDrawer()">🔥 Trending</button>
-    <button class="nav-drawer-item"        data-view="foryou"    onclick="setView('foryou',this);closeNavDrawer()">✦ For You</button>
+    <button class="nav-drawer-item"        data-view="foryou"    onclick="setView('foryou',this);closeNavDrawer()">✨ For You</button>
     <button class="nav-drawer-item"        data-view="discover"   onclick="setView('discover',this);closeNavDrawer()">🧭 Discover</button>
     <div class="nav-drawer-divider"></div>
     <button class="nav-drawer-item"        data-view="favourites" onclick="setView('favourites',this);closeNavDrawer()">❤️ Favourites</button>
@@ -1037,6 +1037,7 @@
 
 <!-- ── Image lightbox ── -->
 <div class="img-lightbox hidden" id="imgLightbox" onclick="closeImgLightbox()">
+  <button class="img-lightbox-close" onclick="event.stopPropagation();closeImgLightbox()" aria-label="Close">✕</button>
   <img id="imgLightboxImg" src="" alt="">
 </div>
 

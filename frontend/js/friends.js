@@ -417,6 +417,9 @@ document.addEventListener('click', e => {
   const panel = document.getElementById('notifPanel');
   // Ignore clicks on the button itself — toggleNotifPanel() handles those
   if (btn && btn.contains(e.target)) return;
+  // Ignore clicks inside the notification detail overlay — don't collapse panel while detail is open
+  const notifDetail = document.getElementById('notifDetailOverlay');
+  if (notifDetail && notifDetail.contains(e.target)) return;
   if (btn && panel && !panel.contains(e.target)) {
     _notifPanelOpen = false;
     panel.classList.remove('open');
