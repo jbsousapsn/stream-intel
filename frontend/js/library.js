@@ -1512,12 +1512,40 @@ const PLATFORM_INTENT_URLS = {
   paramount_plus: url => `intent://${url.replace(/^https?:\/\//,'')}#Intent;scheme=https;package=com.cbs.ott;S.browser_fallback_url=${encodeURIComponent(url)};end`,
 };
 
+// iOS custom URL scheme builders — try to open the app; browser falls back to web URL if not installed.
+// Universal Links on iOS only trigger for user-initiated <a> clicks in Safari and only for URL paths
+// the app has registered (e.g. amazon.com/* is broad, but netflix.com/search?q= is not registered).
+// Custom schemes work regardless of path and without needing Apple-registered entitlements.
+const PLATFORM_IOS_SCHEMES = {
+  netflix:        q => `nflx://www.netflix.com/search?q=${encodeURIComponent(q)}`,
+  disney_plus:    q => `disneyplus://`,
+  hbo_max:        q => `max://`,
+  apple_tv:       q => `com.apple.tv://`,
+  prime_video:    q => `primevideo://search?phrase=${encodeURIComponent(q)}`,
+  hulu:           q => `hulu://`,
+  peacock:        q => `peacocktv://`,
+  paramount_plus: q => `paramountplus://`,
+};
+
 function openPlatformLink(e, href, p) {
   if (/android/i.test(navigator.userAgent) && PLATFORM_INTENT_URLS[p]) {
     e.preventDefault();
     window.location.href = PLATFORM_INTENT_URLS[p](href);
+  } else if (/iPhone|iPad|iPod/i.test(navigator.userAgent) && PLATFORM_IOS_SCHEMES[p]) {
+    e.preventDefault();
+    const title  = (typeof currentModalTitle !== 'undefined' && currentModalTitle?.title) || '';
+    const appUrl = PLATFORM_IOS_SCHEMES[p](title);
+    // If the app is installed, the page will become hidden when the OS switches to it.
+    // If not installed, the scheme fails silently and we fall back to the web URL after ~1.2 s.
+    const fallback = setTimeout(() => window.open(href, '_blank'), 1200);
+    document.addEventListener('visibilitychange', function onHide() {
+      if (document.hidden) {
+        clearTimeout(fallback);
+        document.removeEventListener('visibilitychange', onHide);
+      }
+    });
+    window.location.href = appUrl;
   }
-  // iOS: Universal Links trigger automatically on regular https:// href
 }
 
 // Per-platform search URL builders (used to make platform pills clickable)
