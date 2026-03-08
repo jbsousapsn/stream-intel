@@ -127,6 +127,33 @@ def test_titles_unique_mode(client, admin_headers, seeded_titles):
     assert isinstance(data["titles"], list)
 
 
+def test_titles_unique_mode_returns_num_seasons(client, admin_headers, app):
+    """unique=1 must include num_seasons for TV shows in the response."""
+    with app.app_context():
+        from backend.database import get_db
+        db = get_db()
+        # Insert same TV show on two platforms, both with num_seasons set
+        for platform in ("Netflix", "Disney+"):
+            db.execute(
+                """INSERT INTO titles
+                   (platform, region, title, content_type, runtime_mins, release_year,
+                    imdb_score, imdb_votes, num_seasons, scraped_at)
+                   VALUES (?,?,?,?,?,?,?,?,?, datetime('now'))""",
+                (platform, "US", "Bridgerton", "tv", 60, "2020", 7.3, 100000, 4),
+            )
+        db.commit()
+
+    rv = client.get("/api/titles?unique=1", headers=admin_headers)
+    assert rv.status_code == 200
+    titles = rv.get_json()["titles"]
+    # Should be deduplicated to one entry
+    bridgerton = [t for t in titles if t["title"] == "Bridgerton"]
+    assert len(bridgerton) == 1, "unique=1 should collapse duplicates"
+    assert bridgerton[0]["num_seasons"] == 4, (
+        f"num_seasons should be 4, got {bridgerton[0].get('num_seasons')}"
+    )
+
+
 def test_titles_pagination_limit(client, admin_headers, seeded_titles):
     rv = client.get("/api/titles?limit=2&offset=0", headers=admin_headers)
     data = rv.get_json()
