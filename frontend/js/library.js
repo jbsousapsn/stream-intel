@@ -387,10 +387,85 @@ function switchModalTab(panel, tabEl) {
 
 // ── Modal open / close ────────────────────────────────────────────────────────
 let tmdbCache = {};  // cache TMDB details per "type::id"
+let _reviewsFetched = false;  // reset per-modal open
+
+function loadReviewsIfNeeded() {
+  if (_reviewsFetched) return;
+  _reviewsFetched = true;
+  loadReviews();
+}
+
+async function loadReviews() {
+  const t = currentModalTitle;
+  if (!t) return;
+  const el = document.getElementById('reviewsContent');
+  if (!el) return;
+
+  const mt = t.content_type === 'tv' ? 'tv' : 'movie';
+  const cacheKey = mt + '::' + t.title + '::' + (t.release_year || '');
+  // Re-use the TMDB id already fetched for cast/details if available
+  let id = tmdbCache[cacheKey]?.id;
+  if (!id) {
+    id = await tmdbFindId(t.title, t.release_year, t.content_type);
+  }
+  if (!id) {
+    el.className = 'panel-err';
+    el.textContent = 'No TMDB data found for this title.';
+    return;
+  }
+
+  const data = await tmdbGet(`/${mt}/${id}/reviews`);
+  const results = data?.results || [];
+  if (!results.length) {
+    el.className = 'panel-err';
+    el.textContent = 'No reviews available for this title.';
+    return;
+  }
+
+  el.className = '';
+  el.innerHTML = `<div class="reviews-list">${results.map(r => {
+    const author = escHtml(r.author || 'Anonymous');
+    const rating = r.author_details?.rating;
+    const ratingBadge = rating != null
+      ? `<span class="review-rating">⭐ ${rating}/10</span>`
+      : '';
+    const date = r.created_at ? new Date(r.created_at).toLocaleDateString(undefined, {year:'numeric',month:'short',day:'numeric'}) : '';
+    // Truncate long reviews with a toggle
+    const content = escHtml(r.content || '');
+    const id_r = 'rv-' + r.id;
+    const long = r.content?.length > 600;
+    const preview = long ? escHtml(r.content.slice(0, 600)) + '…' : content;
+    return `
+      <div class="review-card">
+        <div class="review-header">
+          <span class="review-author">${author}</span>
+          ${ratingBadge}
+          ${date ? `<span class="review-date">${date}</span>` : ''}
+        </div>
+        <div class="review-body" id="${id_r}">${preview}</div>
+        ${long ? `<button class="review-expand" onclick="_reviewToggle('${id_r}','${escAttr(r.content)}')">Read more</button>` : ''}
+      </div>`;
+  }).join('')}</div>`;
+}
+
+function _reviewToggle(elId, fullText) {
+  const el = document.getElementById(elId);
+  const btn = el?.nextElementSibling;
+  if (!el || !btn) return;
+  if (btn.textContent === 'Read more') {
+    el.innerHTML = escHtml(fullText);
+    btn.textContent = 'Show less';
+  } else {
+    el.innerHTML = escHtml(fullText.slice(0, 600)) + '…';
+    btn.textContent = 'Read more';
+  }
+}
 
 async function openModal(cardIdOrObj, fromHistory = false) {
   // cardIdOrObj can be a titleKey string (from cardDataStore), a legacy random ID, or a plain object
-  const t = typeof cardIdOrObj === 'string' ? (cardDataStore[cardIdOrObj] || cardDataStore[cardIdOrObj]) : cardIdOrObj;
+  const t = typeof cardIdOrObj === 'string'
+    ? (cardDataStore[cardIdOrObj] || allTitles?.find(x => titleKey(x) === cardIdOrObj))
+    : cardIdOrObj;
   if (!t) return;
   if (!fromHistory) {
     navStack.length = 0; // fresh navigation only clears when not coming from history
@@ -407,6 +482,10 @@ async function openModal(cardIdOrObj, fromHistory = false) {
   // Reset tabs to Overview
   switchModalTab('overview', document.querySelector('[data-panel="overview"]'));
   document.getElementById('seasonsTab').style.display = isTV ? '' : 'none';
+  // Reset reviews so stale content from previous title doesn't bleed through
+  _reviewsFetched = false;
+  const rc = document.getElementById('reviewsContent');
+  if (rc) { rc.className = 'panel-loading'; rc.textContent = 'Loading reviews…'; }
 
   // Static header
   // Platform + region selector
@@ -1360,11 +1439,17 @@ function updateModalRating(rating) {
     const btn = e.target.closest('.star-btn');
     const hv  = btn ? parseInt(btn.dataset.v) : 0;
     container.querySelectorAll('.star-btn').forEach(s => {
-      s.classList.toggle('star-pre', parseInt(s.dataset.v) <= hv);
+      const v = parseInt(s.dataset.v);
+      s.classList.toggle('star-pre', v <= hv);
+      // Suppress the persisted active state for stars above the hover position
+      s.classList.toggle('star-pre-dim', v > hv);
     });
   });
   container.addEventListener('mouseleave', () => {
-    container.querySelectorAll('.star-btn').forEach(s => s.classList.remove('star-pre'));
+    container.querySelectorAll('.star-btn').forEach(s => {
+      s.classList.remove('star-pre');
+      s.classList.remove('star-pre-dim');
+    });
   });
 })();
 

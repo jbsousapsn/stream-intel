@@ -1189,7 +1189,7 @@ button, a, input, select, textarea, [onclick], label,
   .score-value.imdb { color: var(--gold); }
   .score-value.rt { color: var(--tomato); }
   .score-value.tmdb { color: #4fc3f7; }
-  .rating-tag { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,.06); color: var(--muted); white-space: nowrap; margin-left: auto; }
+  .card-sub .rating-tag { margin-left: auto; }
   .score-votes { font-size: 10px; color: var(--muted); }
   .genres { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
   .genre-chip { font-size: 10px; color: var(--muted); background: var(--bg); border: 1px solid var(--border); padding: 2px 7px; border-radius: 4px; }
@@ -1409,7 +1409,7 @@ button, a, input, select, textarea, [onclick], label,
 
   /* ── Action row ── */
   .modal-actions {
-    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    display: flex; gap: 20px; flex-wrap: wrap; align-items: center;
     padding: 20px 500px;
   }
   .modal-fav-btn { padding:9px 20px; border-radius:20px; border:1px solid var(--border); background:transparent; color:var(--muted); font-family:var(--font-body); font-size: 14px; cursor:pointer; transition:all var(--transition); font-weight:600; }
@@ -1683,6 +1683,17 @@ button, a, input, select, textarea, [onclick], label,
   .ep-overview { font-size: 13px; color:rgba(212,216,224,.55); margin-top:4px; line-height:1.5; }
   .panel-loading { padding:40px; text-align:center; color:var(--muted); font-size: 14px; }
   .panel-err { padding:24px; text-align:center; color:var(--accent2); font-size: 14px; }
+
+  /* ── Reviews ── */
+  .reviews-list { display:flex; flex-direction:column; gap:16px; padding:24px 0; }
+  .review-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px; }
+  .review-header { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  .review-author { font-size:14px; font-weight:700; color:var(--text); }
+  .review-rating { font-size:12px; font-weight:600; color:var(--gold); background:rgba(226,201,126,.12); padding:2px 8px; border-radius:20px; }
+  .review-date { font-size:12px; color:var(--muted); margin-left:auto; }
+  .review-body { font-size:14px; line-height:1.75; color:rgba(212,216,224,.82); white-space:pre-wrap; word-break:break-word; }
+  .review-expand { margin-top:10px; font-size:13px; color:var(--accent); background:none; border:none; cursor:pointer; padding:0; font-weight:600; }
+  .review-expand:hover { text-decoration:underline; }
 
   /* ── Global loader overlay ── */
   .global-loader {
@@ -2113,7 +2124,7 @@ body.nav-drawer-open { overflow: hidden; }
   /* actions row */
   .modal-actions {
     padding: 14px 16px;
-    gap: 7px;
+    gap: 14px;
     flex-wrap: wrap;
   }
   .modal-share-row { padding: 0 16px 14px; }
@@ -2644,8 +2655,10 @@ body.nav-drawer-open { overflow: hidden; }
 .star-btn.active { color: var(--gold); }
 .star-btn.star-pre,
 .star-btn:hover  { color: var(--gold); transform: scale(1.15); }
+/* While hovering, dim active stars that are above the hovered position */
+.star-btn.star-pre-dim.active { color: rgba(255,255,255,.15); }
 .modal-rating-clear {
-  font-size: 12px; color: var(--muted); cursor: pointer;
+  font-size: 12px; font-family: 'DM-Sans', sans-serif; color: var(--muted); cursor: pointer;
   padding: 3px 8px; border: 1px solid var(--border); border-radius: 12px;
   background: none; flex-shrink: 0; white-space: nowrap;
 }

@@ -77,6 +77,9 @@ const _tmdbShowData   = {};   // titleKey -> { tmdbId, ongoing, endYear, nextEp,
 const _upcomingEpStore = {};  // epKey (title_key::SxEx) -> {ep, t, sd}
 
 function titleKey(t) { return `${t.platform}::${t.title.toLowerCase().trim()}`; }
+// cardKey adds content_type so a movie and TV show with the same name on the
+// same platform get distinct entries in cardDataStore (avoids wrong modal bug).
+function cardKey(t) { return `${t.platform}::${t.title.toLowerCase().trim()}::${t.content_type || ''}`; }
 function getEntry(t) { return libraryMap[titleKey(t)] || {is_fav:false, status:'not-started', notes:'', user_rating:0}; }
 
 async function syncLibrary(t, patch, opts={}) {
@@ -351,14 +354,16 @@ async function loadTitles() {
       } else {
         t.platform_urls = null;
       }
-      cardDataStore[titleKey(t)] = t;
+      cardDataStore[cardKey(t)] = t;
       return t;
     });
 
     raw.forEach(t => {
       const k = titleKey(t);
-      if (!libraryMap[k] || t.is_fav || t.status !== 'not-started') {
-        libraryMap[k] = { is_fav: !!t.is_fav, status: t.status || 'not-started', notes: t.notes || '', user_rating: t.user_rating || 0 };
+      // Only seed a default entry; never overwrite an existing libraryMap entry
+      // (which was loaded from /api/library and may contain user_rating, notes, etc.)
+      if (!libraryMap[k]) {
+        libraryMap[k] = { is_fav: false, status: 'not-started', notes: '', user_rating: 0 };
       }
     });
 
@@ -642,6 +647,7 @@ function renderDiscover() {
         <div class="discover-row">
           ${items.map((t, i) => {
             const tk     = titleKey(t);
+            const ck     = cardKey(t);
             const tkAttr = escAttr(tk);
             const tkJs   = jsEsc(tk);
             const plist  = (t.platforms || t.platform || '').split(',').map(p => p.trim()).filter(Boolean);
@@ -655,7 +661,7 @@ function renderDiscover() {
               ? `<div class="card-scores"><div class="score-block"><div class="score-label">${_rtTomatoSvg(11)} RT</div><div class="score-value rt">${sv}</div></div></div>`
               : `<div class="card-scores"><div class="score-block"><div class="score-label">${sec.label}</div><div class="score-value imdb">${sv}</div></div></div>`;
             return `
-              <div class="card" data-tk="${tkAttr}" onclick="openModal('${tkJs}')">
+              <div class="card" data-tk="${tkAttr}" onclick="openModal('${jsEsc(ck)}')">
                 <div class="card-poster" data-disc-tk="${tkAttr}">
                   <div class="card-poster-placeholder"><div class="ph-icon">${t.content_type==='movie'?'🎬':'📺'}</div><div class="ph-title">${escHtml(t.title)}</div></div>
                   <div class="discover-rank-badge${i < 3 ? ' top3' : ''}">${i + 1}</div>
@@ -799,7 +805,7 @@ function renderStatsPanel() {
       <div class="stat-card-title">Highest Rated (IMDb, 10K+ votes)</div>
       <div class="stat-top-list">
         ${topImdb.map((t,i)=>`
-          <div class="stat-top-row" data-stk="${escAttr(titleKey(t))}">
+          <div class="stat-top-row" data-stk="${escAttr(cardKey(t))}">
             <div class="stat-top-num">${i+1}</div>
             <div class="stat-top-title">${escHtml(t.title)}</div>
             <div style="font-size:11px;color:var(--muted);margin-right:8px">${formatPlatform(t.platform)}</div>
@@ -1548,7 +1554,8 @@ function renderCard(t, i) {
   const isFav  = entry.is_fav;
   const status = entry.status || 'not-started';
   const delay  = Math.min(i*0.02, 0.4);
-  const tk     = titleKey(t);
+  const tk     = titleKey(t);   // used for data-tk, DOM sync, libraryMap
+  const ck     = cardKey(t);    // used for cardDataStore lookups & openModal
   const tkAttr = escAttr(tk);
 
   // Rank badge only shown on Trending tab (inside hover overlay)
@@ -1579,7 +1586,7 @@ function renderCard(t, i) {
   }
 
   return `
-    <div class="card" style="animation-delay:${delay}s" data-tk="${tkAttr}" onclick="if(!event.target.closest('button'))openModal('${jsEsc(tk)}')" ontouchstart="if(!event.target.closest('button'))this.classList.add('card-tapped')" ontouchend="this.classList.remove('card-tapped')" ontouchcancel="this.classList.remove('card-tapped')" >
+    <div class="card" style="animation-delay:${delay}s" data-tk="${tkAttr}" onclick="if(!event.target.closest('button'))openModal('${jsEsc(ck)}')" ontouchstart="if(!event.target.closest('button'))this.classList.add('card-tapped')" ontouchend="this.classList.remove('card-tapped')" ontouchcancel="this.classList.remove('card-tapped')" >
       <div class="card-poster" id="poster-${CSS.escape(tk)}">
         <div class="card-poster-placeholder"><div class="ph-icon">${t.content_type==='movie'?'🎬':'📺'}</div><div class="ph-title">${escHtml(t.title)}</div></div>
         ${whRankHtml}
@@ -1588,10 +1595,10 @@ function renderCard(t, i) {
           <div class="poster-bottom">${statusHtml}<div></div></div>
         </div>
         <div class="card-actions" data-active="${isFav && status==='watchlist' ? 'both' : isFav ? 'fav' : status==='watchlist' ? 'wl' : 'none'}">
-          <button class="action-btn fav-btn${isFav?' active':''}" title="Favourite" onclick="event.stopPropagation();toggleFav('${jsEsc(tk)}',this)">${isFav?'♥':'♡'}</button>
-          <button class="action-btn wl-btn${status==='watchlist'?' active':''}" title="Add to Watchlist" onclick="event.stopPropagation();toggleWatchlist('${jsEsc(tk)}',this)">🔖</button>
+          <button class="action-btn fav-btn${isFav?' active':''}" title="Favourite" onclick="event.stopPropagation();toggleFav('${jsEsc(ck)}',this)">${isFav?'♥':'♡'}</button>
+          <button class="action-btn wl-btn${status==='watchlist'?' active':''}" title="Add to Watchlist" onclick="event.stopPropagation();toggleWatchlist('${jsEsc(ck)}',this)">🔖</button>
         </div>
-        <button class="action-btn menu-btn" title="Set status" onclick="event.stopPropagation();openCardMenu('${jsEsc(tk)}',this)">⋮</button>
+        <button class="action-btn menu-btn" title="Set status" onclick="event.stopPropagation();openCardMenu('${jsEsc(ck)}',this)">⋮</button>
       </div>
       ${status!=='not-started'?`<div class="card-status-bar ${status}"></div>`:''}
       <div class="card-body">
