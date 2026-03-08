@@ -1087,7 +1087,6 @@ function openNotifDetail(n) {
   const overlay = document.getElementById('notifDetailOverlay');
   const content = document.getElementById('notifDetailContent');
   if (!overlay || !content) return;
-  if (!_handlingPop) history.pushState({ modal: 'notifDetail' }, '');
 
   const p    = n.payload || {};
   const time = _relTime(n.created_at);

@@ -1922,10 +1922,11 @@ body.nav-drawer-open { overflow: hidden; }
   .mpt-trigger.open svg { transform: rotate(180deg); }
   .mpt-trigger.no-arrow svg { display: none; }
   .mpt-dropdown {
-    position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+    position: fixed; top: 62px;
+    left: 50%; transform: translateX(-50%);
     background: var(--card); border-radius: 10px;
     box-shadow: 0 8px 24px rgba(0,0,0,.45);
-    overflow: hidden; z-index: 500;
+    overflow: hidden; z-index: 1200;
     min-width: 140px;
   }
   .mpt-dropdown.hidden { display: none; }
@@ -3546,3 +3547,22 @@ img.plat-logo { width: 16px; height: 16px; object-fit: contain; border-radius: 3
   vertical-align: super;
   color: var(--accent);
 }
+
+/* ── Image lightbox ── */
+.img-lightbox {
+  position: fixed; inset: 0; z-index: 3000;
+  background: rgba(0,0,0,.92);
+  display: flex; align-items: center; justify-content: center;
+  cursor: zoom-out;
+  opacity: 0; transition: opacity .22s;
+}
+.img-lightbox.hidden { display: none; }
+.img-lightbox.open { opacity: 1; }
+.img-lightbox img {
+  max-width: 94vw; max-height: 92vh;
+  object-fit: contain; border-radius: 8px;
+  box-shadow: 0 24px 80px rgba(0,0,0,.8);
+  transition: transform .22s;
+}
+#mHeroImg { cursor: zoom-in; }
+#mPosterImg { cursor: zoom-in; }

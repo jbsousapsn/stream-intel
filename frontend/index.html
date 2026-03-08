@@ -440,11 +440,11 @@
     <!-- Hero banner + poster -->
     <div class="modal-hero" id="mHero">
       <div class="modal-hero-placeholder" id="mHeroPlaceholder">🎬</div>
-      <img id="mHeroImg" style="display:none" alt="">
+      <img id="mHeroImg" style="display:none" alt="" onclick="openImgLightbox(this.src)" title="View full image">
       <div class="modal-hero-overlay"></div>
       <div class="modal-hero-poster">
         <div class="modal-hero-poster-ph" id="mPosterPh">🎬</div>
-        <img id="mPosterImg" style="display:none" alt="">
+        <img id="mPosterImg" style="display:none" alt="" onclick="openImgLightbox(this.src)" title="View full image">
       </div>
     </div>
 
@@ -1033,6 +1033,11 @@
     <button class="notif-detail-close" onclick="closeNotifDetail()" aria-label="Close">✕</button>
     <div class="notif-detail-scroll" id="notifDetailContent"></div>
   </div>
+</div>
+
+<!-- ── Image lightbox ── -->
+<div class="img-lightbox hidden" id="imgLightbox" onclick="closeImgLightbox()">
+  <img id="imgLightboxImg" src="" alt="">
 </div>
 
 <!-- ── Share action prompt ── -->

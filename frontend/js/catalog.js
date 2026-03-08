@@ -528,6 +528,26 @@ document.addEventListener('click', () => {
 window._toggleMptDropdown = _toggleMptDropdown;
 window._mptSelect = _mptSelect;
 
+// ── Image lightbox ────────────────────────────────────────────────────────────
+function openImgLightbox(src) {
+  if (!src) return;
+  const lb  = document.getElementById('imgLightbox');
+  const img = document.getElementById('imgLightboxImg');
+  if (!lb || !img) return;
+  img.src = src;
+  lb.classList.remove('hidden');
+  requestAnimationFrame(() => lb.classList.add('open'));
+}
+function closeImgLightbox() {
+  const lb = document.getElementById('imgLightbox');
+  if (!lb) return;
+  lb.classList.remove('open');
+  setTimeout(() => { lb.classList.add('hidden'); document.getElementById('imgLightboxImg').src = ''; }, 230);
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeImgLightbox(); });
+window.openImgLightbox  = openImgLightbox;
+window.closeImgLightbox = closeImgLightbox;
+
 // ── View / tab management ─────────────────────────────────────────────────────
 const CONTENT_VIEWS = new Set(['all','movie','tv','trending','favourites','watchlist','watching','finished','library']);
 let _lastLibraryView = 'library';
@@ -2393,7 +2413,6 @@ window.addEventListener('popstate', e => {
     const epDetailOverlay       = document.getElementById('epDetailOverlay');
     const forYouDetailOverlay   = document.getElementById('forYouDetailOverlay');
     const discoverDetailOverlay = document.getElementById('discoverDetailOverlay');
-    const notifDetailOverlay    = document.getElementById('notifDetailOverlay');
     const friendLibraryOverlay  = document.getElementById('friendLibraryOverlay');
     const friendProfileOverlay  = document.getElementById('friendProfileOverlay');
     const filmographyAllOverlay = document.getElementById('filmographyAllOverlay');
@@ -2411,8 +2430,6 @@ window.addEventListener('popstate', e => {
       closeForYouSection();
     } else if (discoverDetailOverlay && discoverDetailOverlay.classList.contains('open')) {
       closeDiscoverSection();
-    } else if (notifDetailOverlay && !notifDetailOverlay.classList.contains('hidden') && notifDetailOverlay.classList.contains('open')) {
-      closeNotifDetail();
     } else if (friendLibraryOverlay && friendLibraryOverlay.classList.contains('open')) {
       closeFriendLibrary();
     } else if (friendProfileOverlay && friendProfileOverlay.classList.contains('open')) {
