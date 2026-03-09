@@ -390,8 +390,12 @@ def google_mobile():
             "https://oauth2.googleapis.com/token",
             data={
                 "code": server_auth_code,
-                "client_id": settings.GOOGLE_CLIENT_ID,
-                "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                "client_id": os.environ.get(
+                    "GOOGLE_MOBILE_CLIENT_ID", settings.GOOGLE_CLIENT_ID
+                ),
+                "client_secret": os.environ.get(
+                    "GOOGLE_MOBILE_CLIENT_SECRET", settings.GOOGLE_CLIENT_SECRET
+                ),
                 "redirect_uri": "",
                 "grant_type": "authorization_code",
             },
