@@ -370,6 +370,135 @@ def google_exchange():
         return jsonify({"error": f"OAuth failed: {str(e)}"}), 400
 
 
+@bp.route("/google-mobile", methods=["POST"])
+def google_mobile():
+    """Exchange a server_auth_code from the native Android/iOS Google Sign-In SDK
+    for a StreamIntel session token.  Returns the token as JSON (not a cookie)
+    because mobile clients store it in AsyncStorage.
+    """
+    t0 = time.time()
+    data = request.get_json(silent=True) or {}
+    server_auth_code = (data.get("server_auth_code") or "").strip()
+    if not server_auth_code:
+        return jsonify({"error": "No server_auth_code provided"}), 400
+    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+        return jsonify({"error": "Google OAuth not configured"}), 500
+
+    try:
+        # Mobile server auth codes require redirect_uri="" (empty string)
+        token_response = httpx.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": server_auth_code,
+                "client_id": settings.GOOGLE_CLIENT_ID,
+                "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                "redirect_uri": "",
+                "grant_type": "authorization_code",
+            },
+            timeout=15,
+        )
+        token_response.raise_for_status()
+        tokens = token_response.json()
+        access_token = tokens.get("access_token")
+
+        user_info_response = httpx.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=15,
+        )
+        user_info_response.raise_for_status()
+        user_info = user_info_response.json()
+
+        google_id = user_info.get("id")
+        email = user_info.get("email")
+        name = user_info.get("name", email.split("@")[0] if email else "User")
+
+        db = get_db()
+        user = db.execute(
+            "SELECT * FROM users WHERE google_id=?", (google_id,)
+        ).fetchone()
+
+        if user:
+            db.execute(
+                "UPDATE users SET last_login=datetime('now') WHERE id=?", (user["id"],)
+            )
+            db.commit()
+            user_id = user["id"]
+            setup_required = bool(user["setup_required"])
+            username = user["username"]
+        else:
+            existing = (
+                db.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+                if email
+                else None
+            )
+            if existing:
+                if not existing["google_id"]:
+                    db.execute(
+                        "UPDATE users SET google_id=?, auth_type='google', last_login=datetime('now') WHERE id=?",
+                        (google_id, existing["id"]),
+                    )
+                    db.commit()
+                    user_id = existing["id"]
+                    setup_required = bool(existing["setup_required"])
+                    username = existing["username"]
+                else:
+                    return jsonify(
+                        {"error": "Email already in use by another Google account"}
+                    ), 409
+            else:
+                base = name or (email.split("@")[0] if email else "user")
+                username_candidate = base
+                suffix = 1
+                while True:
+                    if not db.execute(
+                        "SELECT id FROM users WHERE username=? COLLATE NOCASE",
+                        (username_candidate,),
+                    ).fetchone():
+                        break
+                    username_candidate = f"{base}{suffix}"
+                    suffix += 1
+                try:
+                    db.execute(
+                        "INSERT INTO users (google_id, email, username, auth_type, setup_required) VALUES (?,?,?,?,1)",
+                        (google_id, email, username_candidate, "google"),
+                    )
+                    db.commit()
+                    user_id = db.execute(
+                        "SELECT id FROM users WHERE google_id=?", (google_id,)
+                    ).fetchone()["id"]
+                    setup_required = True
+                    username = username_candidate
+                except sqlite3.IntegrityError as exc:
+                    err_str = str(exc).lower()
+                    if "email" in err_str:
+                        return jsonify({"error": "Email already in use"}), 409
+                    elif "username" in err_str:
+                        return jsonify({"error": "Username already taken"}), 409
+                    else:
+                        return jsonify(
+                            {"error": f"Account creation failed ({err_str})"}
+                        ), 409
+
+        token = make_token(user_id)
+        print(
+            f"[OAUTH-MOBILE] success user_id={user_id} elapsed={time.time() - t0:.3f}s",
+            flush=True,
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "token": token,
+                "setup_required": setup_required,
+                "username": username,
+            }
+        )
+
+    except Exception as e:
+        print(f"[OAUTH-MOBILE] error: {e}", flush=True)
+        return jsonify({"error": f"OAuth failed: {str(e)}"}), 400
+
+
 @bp.route("/logout", methods=["POST"])
 @require_auth
 def logout():
