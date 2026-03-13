@@ -201,6 +201,7 @@ CREATE TABLE IF NOT EXISTS device_tokens (
     created_at TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_device_tokens_user ON device_tokens(user_id);
+"""
 
 
 def get_db() -> sqlite3.Connection:
