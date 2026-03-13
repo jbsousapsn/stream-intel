@@ -68,6 +68,11 @@ class Settings:
         default_factory=lambda: os.getenv("OMDB_API_KEY", "")
     )
 
+    # Firebase Admin SDK — paste the full service-account JSON string as an env var
+    FIREBASE_SERVICE_ACCOUNT_JSON: str = field(
+        default_factory=lambda: os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
+    )
+
     # Web Push (VAPID)
     # Railway stores multiline env vars with literal \n — replace them so PEM
     # parsing works correctly with pywebpush / py_vapid.

@@ -192,14 +192,15 @@ CREATE TABLE IF NOT EXISTS tmdb_ratings (
     tomatometer INTEGER,
     fetched_at  TEXT    DEFAULT (datetime('now'))
 );
-"""
 
-
-def ensure_schema(conn: sqlite3.Connection) -> None:
-    """Apply the full schema (CREATE TABLE IF NOT EXISTS — safe to call on existing DBs)."""
-    conn.executescript(SCHEMA)
-    _apply_migrations(conn)
-    conn.commit()
+CREATE TABLE IF NOT EXISTS device_tokens (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token      TEXT    NOT NULL UNIQUE,
+    platform   TEXT    NOT NULL DEFAULT 'android',
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_device_tokens_user ON device_tokens(user_id);
 
 
 def get_db() -> sqlite3.Connection:
@@ -536,6 +537,21 @@ def _apply_migrations(conn: sqlite3.Connection):
             )
         """)
         print("[DB] Created tmdb_ratings table")
+
+    if "device_tokens" not in tables:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS device_tokens (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                token      TEXT    NOT NULL UNIQUE,
+                platform   TEXT    NOT NULL DEFAULT 'android',
+                created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_device_tokens_user ON device_tokens(user_id)"
+        )
+        print("[DB] Created device_tokens table")
 
     # Add performance indexes
     idx_names = [

@@ -317,6 +317,85 @@ def cancel_friend_request(user_id):
 
 # ── share action with friends ─────────────────────────────────────────────────
 
+# ── FCM (Firebase Cloud Messaging) ──────────────────────────────────
+
+_fcm_app = None
+_fcm_lock = threading.Lock()
+
+
+def _get_fcm_app():
+    """Lazily initialise the Firebase Admin app (singleton)."""
+    global _fcm_app
+    if _fcm_app is not None:
+        return _fcm_app
+    with _fcm_lock:
+        if _fcm_app is not None:
+            return _fcm_app
+        import json as _json
+        import sys
+        try:
+            import firebase_admin
+            from firebase_admin import credentials
+            from backend.config import settings
+            sa_json = settings.FIREBASE_SERVICE_ACCOUNT_JSON
+            if not sa_json:
+                return None
+            sa_dict = _json.loads(sa_json)
+            cred = credentials.Certificate(sa_dict)
+            _fcm_app = firebase_admin.initialize_app(cred)
+        except Exception as exc:
+            print(f"[FCM] init error: {exc}", file=sys.stderr)
+            _fcm_app = None
+    return _fcm_app
+
+
+def _send_fcm_async(user_id: int, title: str, body: str):
+    """Fire-and-forget: send FCM push to all device tokens of user_id."""
+
+    def _run():
+        import sys
+        import sqlite3
+        try:
+            app = _get_fcm_app()
+            if app is None:
+                return
+            from firebase_admin import messaging
+            from backend.config import settings
+            conn = sqlite3.connect(str(settings.DB_PATH))
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT token FROM device_tokens WHERE user_id=?", (user_id,)
+            ).fetchall()
+            conn.close()
+            for row in rows:
+                try:
+                    messaging.send(
+                        messaging.Message(
+                            notification=messaging.Notification(title=title, body=body),
+                            token=row["token"],
+                        )
+                    )
+                    print(f"[FCM] sent to user {user_id}", file=sys.stderr)
+                except Exception as exc:
+                    print(f"[FCM] send error for user {user_id}: {exc}", file=sys.stderr)
+                    # Remove stale / invalid tokens
+                    err_str = str(exc)
+                    if any(k in err_str for k in ("registration-token-not-registered",
+                                                   "invalid-argument",
+                                                   "InvalidArgument",
+                                                   "UNREGISTERED")):
+                        conn2 = sqlite3.connect(str(settings.DB_PATH))
+                        conn2.execute(
+                            "DELETE FROM device_tokens WHERE token=?", (row["token"],)
+                        )
+                        conn2.commit()
+                        conn2.close()
+        except Exception as exc:
+            print(f"[FCM] unexpected error: {exc}", file=sys.stderr)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 # ── Web Push ────────────────────────────────────────────────────────
 
 
@@ -424,6 +503,42 @@ def push_unsubscribe():
     endpoint = sub.get("endpoint")
     if endpoint:
         db.execute("DELETE FROM push_subscriptions WHERE endpoint=?", (endpoint,))
+        db.commit()
+    return jsonify({"ok": True})
+
+
+@bp.route("/push/device-token", methods=["POST"])
+@require_auth
+def register_device_token():
+    db = get_db()
+    uid = _me()
+    data = request.get_json(silent=True) or {}
+    token = (data.get("token") or "").strip()
+    platform = (data.get("platform") or "android").strip().lower()
+    if not token:
+        return jsonify({"error": "token is required"}), 400
+    db.execute(
+        """INSERT INTO device_tokens (user_id, token, platform)
+           VALUES (?, ?, ?)
+           ON CONFLICT(token) DO UPDATE SET user_id=excluded.user_id,
+               platform=excluded.platform""",
+        (uid, token, platform),
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@bp.route("/push/device-token", methods=["DELETE"])
+@require_auth
+def unregister_device_token():
+    db = get_db()
+    uid = _me()
+    data = request.get_json(silent=True) or {}
+    token = (data.get("token") or "").strip()
+    if token:
+        db.execute(
+            "DELETE FROM device_tokens WHERE token=? AND user_id=?", (token, uid)
+        )
         db.commit()
     return jsonify({"ok": True})
 
