@@ -333,10 +333,12 @@ def _get_fcm_app():
             return _fcm_app
         import json as _json
         import sys
+
         try:
             import firebase_admin
             from firebase_admin import credentials
             from backend.config import settings
+
             sa_json = settings.FIREBASE_SERVICE_ACCOUNT_JSON
             if not sa_json:
                 return None
@@ -355,12 +357,14 @@ def _send_fcm_async(user_id: int, title: str, body: str):
     def _run():
         import sys
         import sqlite3
+
         try:
             app = _get_fcm_app()
             if app is None:
                 return
             from firebase_admin import messaging
             from backend.config import settings
+
             conn = sqlite3.connect(str(settings.DB_PATH))
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
@@ -377,13 +381,20 @@ def _send_fcm_async(user_id: int, title: str, body: str):
                     )
                     print(f"[FCM] sent to user {user_id}", file=sys.stderr)
                 except Exception as exc:
-                    print(f"[FCM] send error for user {user_id}: {exc}", file=sys.stderr)
+                    print(
+                        f"[FCM] send error for user {user_id}: {exc}", file=sys.stderr
+                    )
                     # Remove stale / invalid tokens
                     err_str = str(exc)
-                    if any(k in err_str for k in ("registration-token-not-registered",
-                                                   "invalid-argument",
-                                                   "InvalidArgument",
-                                                   "UNREGISTERED")):
+                    if any(
+                        k in err_str
+                        for k in (
+                            "registration-token-not-registered",
+                            "invalid-argument",
+                            "InvalidArgument",
+                            "UNREGISTERED",
+                        )
+                    ):
                         conn2 = sqlite3.connect(str(settings.DB_PATH))
                         conn2.execute(
                             "DELETE FROM device_tokens WHERE token=?", (row["token"],)

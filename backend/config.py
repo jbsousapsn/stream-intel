@@ -64,9 +64,7 @@ class Settings:
     )
 
     # OMDB API (for ratings enrichment)
-    OMDB_API_KEY: str = field(
-        default_factory=lambda: os.getenv("OMDB_API_KEY", "")
-    )
+    OMDB_API_KEY: str = field(default_factory=lambda: os.getenv("OMDB_API_KEY", ""))
 
     # Firebase Admin SDK — paste the full service-account JSON string as an env var
     FIREBASE_SERVICE_ACCOUNT_JSON: str = field(

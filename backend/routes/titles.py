@@ -909,11 +909,13 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
         (tmdb_id,),
     ).fetchone()
     if row:
-        return jsonify({
-            "imdb_score": row["imdb_score"],
-            "imdb_votes": row["imdb_votes"],
-            "tomatometer": row["tomatometer"],
-        })
+        return jsonify(
+            {
+                "imdb_score": row["imdb_score"],
+                "imdb_votes": row["imdb_votes"],
+                "tomatometer": row["tomatometer"],
+            }
+        )
 
     # Resolve imdb_id via TMDB external_ids
     ext = _tmdb(f"/{media_type}/{tmdb_id}/external_ids")
@@ -977,8 +979,10 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
     )
     db.commit()
 
-    return jsonify({
-        "imdb_score": imdb_score,
-        "imdb_votes": imdb_votes,
-        "tomatometer": tomatometer,
-    })
+    return jsonify(
+        {
+            "imdb_score": imdb_score,
+            "imdb_votes": imdb_votes,
+            "tomatometer": tomatometer,
+        }
+    )
