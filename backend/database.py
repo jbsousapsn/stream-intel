@@ -183,6 +183,15 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
     created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id);
+
+CREATE TABLE IF NOT EXISTS tmdb_ratings (
+    tmdb_id     INTEGER PRIMARY KEY,
+    imdb_id     TEXT,
+    imdb_score  REAL    DEFAULT 0,
+    imdb_votes  INTEGER DEFAULT 0,
+    tomatometer INTEGER,
+    fetched_at  TEXT    DEFAULT (datetime('now'))
+);
 """
 
 
@@ -514,6 +523,19 @@ def _apply_migrations(conn: sqlite3.Connection):
             "CREATE INDEX IF NOT EXISTS idx_notif_created ON notifications(user_id, created_at DESC)"
         )
         print("[DB] Created notifications table")
+
+    if "tmdb_ratings" not in tables:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tmdb_ratings (
+                tmdb_id     INTEGER PRIMARY KEY,
+                imdb_id     TEXT,
+                imdb_score  REAL    DEFAULT 0,
+                imdb_votes  INTEGER DEFAULT 0,
+                tomatometer INTEGER,
+                fetched_at  TEXT    DEFAULT (datetime('now'))
+            )
+        """)
+        print("[DB] Created tmdb_ratings table")
 
     # Add performance indexes
     idx_names = [

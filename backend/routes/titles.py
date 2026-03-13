@@ -448,6 +448,7 @@ def save_poster_cache():
 
 TMDB_KEY = os.getenv("TMDB_API_KEY")
 TMDB_BASE = "https://api.themoviedb.org/3"
+OMDB_KEY = os.getenv("OMDB_API_KEY")
 _tmdb_session = _requests.Session()
 
 
@@ -892,3 +893,92 @@ def tmdb_external_ids(media_type: str, tmdb_id: int):
         return jsonify({"error": "invalid media_type"}), 400
     data = _tmdb(f"/{media_type}/{tmdb_id}/external_ids")
     return jsonify(data)
+
+
+@bp.route("/tmdb/<media_type>/<int:tmdb_id>/ratings")
+@require_auth
+def tmdb_ratings(media_type: str, tmdb_id: int):
+    if media_type not in ("movie", "tv"):
+        return jsonify({"error": "invalid media_type"}), 400
+
+    db = get_db()
+
+    # Cache hit
+    row = db.execute(
+        "SELECT imdb_score, imdb_votes, tomatometer FROM tmdb_ratings WHERE tmdb_id = ?",
+        (tmdb_id,),
+    ).fetchone()
+    if row:
+        return jsonify({
+            "imdb_score": row["imdb_score"],
+            "imdb_votes": row["imdb_votes"],
+            "tomatometer": row["tomatometer"],
+        })
+
+    # Resolve imdb_id via TMDB external_ids
+    ext = _tmdb(f"/{media_type}/{tmdb_id}/external_ids")
+    imdb_id = ext.get("imdb_id")
+    if not imdb_id:
+        return jsonify({"error": "no imdb_id found for this title"}), 404
+
+    if not OMDB_KEY:
+        return jsonify({"error": "OMDB_API_KEY not configured"}), 503
+
+    # Fetch OMDB ratings
+    try:
+        omdb_resp = _tmdb_session.get(
+            "https://www.omdbapi.com/",
+            params={"i": imdb_id, "apikey": OMDB_KEY, "tomatoes": "true"},
+            timeout=8,
+        ).json()
+    except Exception:
+        return jsonify({"error": "OMDB request failed"}), 502
+
+    if omdb_resp.get("Response") == "False":
+        return jsonify({"error": omdb_resp.get("Error", "OMDB error")}), 404
+
+    # imdb_score
+    try:
+        imdb_score = float(omdb_resp.get("imdbRating") or 0)
+    except (ValueError, TypeError):
+        imdb_score = 0.0
+
+    # imdb_votes
+    try:
+        imdb_votes = int(
+            (omdb_resp.get("imdbVotes") or "0").replace(",", "").strip() or "0"
+        )
+    except (ValueError, TypeError):
+        imdb_votes = 0
+
+    # tomatometer — tomatoMeter field (tomatoes=true) or Ratings array fallback
+    tomatometer = None
+    raw_tm = omdb_resp.get("tomatoMeter", "")
+    if raw_tm and raw_tm not in ("N/A", ""):
+        try:
+            tomatometer = int(raw_tm)
+        except (ValueError, TypeError):
+            pass
+    if tomatometer is None:
+        for rating in omdb_resp.get("Ratings", []):
+            if rating.get("Source") == "Rotten Tomatoes":
+                val = rating.get("Value", "").rstrip("%")
+                try:
+                    tomatometer = int(val)
+                except (ValueError, TypeError):
+                    pass
+                break
+
+    db.execute(
+        """INSERT OR REPLACE INTO tmdb_ratings
+               (tmdb_id, imdb_id, imdb_score, imdb_votes, tomatometer, fetched_at)
+           VALUES (?, ?, ?, ?, ?, datetime('now'))""",
+        (tmdb_id, imdb_id, imdb_score, imdb_votes, tomatometer),
+    )
+    db.commit()
+
+    return jsonify({
+        "imdb_score": imdb_score,
+        "imdb_votes": imdb_votes,
+        "tomatometer": tomatometer,
+    })

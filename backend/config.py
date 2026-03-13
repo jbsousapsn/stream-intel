@@ -63,6 +63,11 @@ class Settings:
         default_factory=lambda: os.getenv("SCRAPER_PROXY_URL", "")
     )
 
+    # OMDB API (for ratings enrichment)
+    OMDB_API_KEY: str = field(
+        default_factory=lambda: os.getenv("OMDB_API_KEY", "")
+    )
+
     # Web Push (VAPID)
     # Railway stores multiline env vars with literal \n — replace them so PEM
     # parsing works correctly with pywebpush / py_vapid.
