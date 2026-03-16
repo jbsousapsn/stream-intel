@@ -720,15 +720,17 @@ def _push_body_for(ntype: str, actor_name: str, payload: dict) -> str:
         }
         if status and status in status_map:
             body = status_map[status]
+            # Only mention fav if it's currently true — is_fav=False means
+            # "not a favourite", NOT "just unfavourited", so ignore False here.
             if is_fav is True:
                 body = body.rstrip(".") + " and marked it as favourite."
-            if is_fav is False:
-                body = body.rstrip(".") + " and removed it from favourites."
             return body
+        # No status — only mention favouriting when is_fav is explicitly True.
         if is_fav is True:
             return f"{name} favourited \u201c{title}\u201d."
-        if is_fav is False:
-            return f"{name} unfavourited \u201c{title}\u201d."
+        # Fallback: generic shared message (avoids false "unfavourited" noise).
+        if title:
+            return f"{name} shared \u201c{title}\u201d with you."
     return "You have a new notification."
 
 
