@@ -322,6 +322,14 @@ def _apply_migrations(conn: sqlite3.Connection):
         print("[DB] Adding pic_position_y column to users")
         conn.execute("ALTER TABLE users ADD COLUMN pic_position_y INTEGER DEFAULT 50")
 
+    if "pic_position_x" not in cols:
+        print("[DB] Adding pic_position_x column to users")
+        conn.execute("ALTER TABLE users ADD COLUMN pic_position_x REAL DEFAULT 0.5")
+
+    if "pic_scale" not in cols:
+        print("[DB] Adding pic_scale column to users")
+        conn.execute("ALTER TABLE users ADD COLUMN pic_scale REAL DEFAULT 1.0")
+
     if "setup_required" not in cols:
         print("[DB] Adding setup_required column to users")
         conn.execute(

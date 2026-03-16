@@ -213,7 +213,7 @@ def get_profile():
 
     # ── User row ──────────────────────────────────────────────────────────────
     user = db.execute(
-        "SELECT username, email, auth_type, created_at, profile_pic, display_name, home_country, library_public, pic_position_y FROM users WHERE id=?",
+        "SELECT username, email, auth_type, created_at, profile_pic, display_name, home_country, library_public, pic_position_y, pic_position_x, pic_scale FROM users WHERE id=?",
         (uid,),
     ).fetchone()
 
@@ -251,6 +251,12 @@ def get_profile():
             "pic_position_y": int(user["pic_position_y"])
             if user["pic_position_y"] is not None
             else 50,
+            "pic_position_x": float(user["pic_position_x"])
+            if user["pic_position_x"] is not None
+            else 0.5,
+            "pic_scale": float(user["pic_scale"])
+            if user["pic_scale"] is not None
+            else 1.0,
         }
     )
 
@@ -296,6 +302,22 @@ def update_profile():
             pos_y = 50
         updates.append("pic_position_y=?")
         params.append(pos_y)
+
+    if "pic_position_x" in data:
+        try:
+            pos_x = max(0.0, min(1.0, float(data["pic_position_x"])))
+        except (TypeError, ValueError):
+            pos_x = 0.5
+        updates.append("pic_position_x=?")
+        params.append(pos_x)
+
+    if "pic_scale" in data:
+        try:
+            scale = max(0.1, min(10.0, float(data["pic_scale"])))
+        except (TypeError, ValueError):
+            scale = 1.0
+        updates.append("pic_scale=?")
+        params.append(scale)
 
     if "username" in data:
         new_uname = (data.get("username") or "").strip()
