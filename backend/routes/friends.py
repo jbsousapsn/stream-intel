@@ -770,6 +770,8 @@ def _create_notification(db, user_id, actor_id, ntype, payload):
     actor_name = payload.get("actor_name") or ""
     body = _push_body_for(ntype, actor_name, payload)
     _send_push_async(user_id, {"title": "StreamIntel", "body": body, "url": "/"})
+    # Fire FCM push to mobile devices
+    _send_fcm_async(user_id, "StreamIntel", body)
 
 
 @bp.route("/notifications", methods=["GET"])
