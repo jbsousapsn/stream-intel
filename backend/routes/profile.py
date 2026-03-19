@@ -507,17 +507,19 @@ def get_top_actors():
     if not lib_rows:
         return jsonify({"actors": [], "directors": []})
 
-    # Build a map of title → set of season numbers with watched episodes, and watchtime
+    # Build maps from watched_seasons
     ws_rows = db.execute(
-        "SELECT title, season_num, runtime_mins FROM watched_seasons WHERE user_id=? AND ep_mask > 0",
+        "SELECT title, season_num, ep_mask, runtime_mins FROM watched_seasons WHERE user_id=? AND ep_mask > 0",
         (uid,),
     ).fetchall()
     watched_seasons_map: dict = {}
-    watchtime_map: dict = {}  # title_key → total watched runtime_mins
+    watchtime_map: dict = {}       # title_key → total watched runtime_mins (used for movies)
+    watched_ep_count_map: dict = {}  # title_key → total watched episode count (caps TV actor watchtime)
     for ws in ws_rows:
         key = ws["title"].strip().lower()
         watched_seasons_map.setdefault(key, set()).add(ws["season_num"])
         watchtime_map[key] = watchtime_map.get(key, 0) + (ws["runtime_mins"] or 0)
+        watched_ep_count_map[key] = watched_ep_count_map.get(key, 0) + bin(ws["ep_mask"]).count("1")
 
     # Deduplicate by (normalised title, content_type)
     seen: set = set()
@@ -542,6 +544,7 @@ def get_top_actors():
                     "genres": genres,
                     "watched_seasons": watched_seasons_map.get(tk, set()),
                     "watchtime_mins": watchtime_map.get(tk, 0),
+                    "watched_ep_count": watched_ep_count_map.get(tk, 0),
                 }
             )
 
@@ -558,6 +561,7 @@ def get_top_actors():
                 "genres": entry["genres"],
                 "watched_seasons": entry["watched_seasons"],
                 "watchtime_mins": entry["watchtime_mins"],
+                "watched_ep_count": entry["watched_ep_count"],
             }
         return None
 
@@ -585,32 +589,32 @@ def get_top_actors():
     def _credits(entry: dict):
         tid = entry["tmdb_id"]
         mt = entry["media_type"]
-        status = entry["status"]
-        seasons: set = entry.get("watched_seasons", set())
 
         if mt == "movie":
-            return _tmdb(f"/movie/{tid}/credits")
+            data = _tmdb(f"/movie/{tid}/credits")
+            # Embed movie runtime so the loop can use it without touching `entry`
+            data["_is_movie"] = True
+            data["_movie_runtime"] = entry.get("watchtime_mins", 0)
+            return data
 
-        if status == "finished":
-            return _tmdb(f"/tv/{tid}/aggregate_credits")
-
-        # watching TV — only count seasons the user has actually watched
-        if not seasons:
-            return {"cast": [], "crew": []}
-
-        merged_cast: dict = {}
-        merged_crew: dict = {}
-        for sn in seasons:
-            data = _tmdb(f"/tv/{tid}/season/{sn}/credits")
-            for actor in data.get("cast") or []:
-                pid = actor.get("id")
-                if pid and pid not in merged_cast:
-                    merged_cast[pid] = actor
-            for crew_m in data.get("crew") or []:
-                pid = crew_m.get("id")
-                if pid and crew_m.get("job") == "Director" and pid not in merged_crew:
-                    merged_crew[pid] = crew_m
-        return {"cast": list(merged_cast.values()), "crew": list(merged_crew.values())}
+        # TV — always use aggregate_credits so every actor gets an accurate
+        # total_episode_count across all seasons. Also fetch show details for
+        # average episode runtime so watchtime = episode_count × avg_runtime.
+        agg = _tmdb(f"/tv/{tid}/aggregate_credits")
+        try:
+            show = _tmdb(f"/tv/{tid}")
+        except Exception:
+            show = {}
+        avg_ep_runtime: int = ((show.get("episode_run_time") or []) + [45])[0]
+        status = entry["status"]
+        # For "watching" shows, cap actor episode count by the episodes the user
+        # has actually watched (so a guest star in season 1 of a 5-season show
+        # is only credited if the user watched season 1).
+        watched_eps = entry.get("watched_ep_count", 0) if status == "watching" else None
+        agg["_is_movie"] = False
+        agg["_avg_ep_runtime"] = avg_ep_runtime
+        agg["_watched_eps"] = watched_eps  # None → finished, use full episode count
+        return agg
 
     with ThreadPoolExecutor(max_workers=20) as ex:
         futs = {ex.submit(_credits, r): r for r in resolved}
@@ -621,14 +625,26 @@ def get_top_actors():
                 credits = fut.result()
             except Exception:
                 continue
-            entry_watchtime: int = entry.get("watchtime_mins", 0)
+            is_movie: bool = credits.get("_is_movie", True)
+            movie_runtime: int = credits.get("_movie_runtime", 0)
+            avg_ep_runtime: int = credits.get("_avg_ep_runtime", 45)
+            # None → finished show (use actor's full episode count)
+            watched_eps = credits.get("_watched_eps")
+
             for actor in (credits.get("cast") or []):
                 pid = actor.get("id")
                 if not pid:
                     continue
+                if is_movie:
+                    actor_watchtime = movie_runtime
+                else:
+                    # aggregate_credits: total_episode_count = episodes actor appeared in
+                    ep_count: int = actor.get("total_episode_count") or 0
+                    effective_eps = ep_count if watched_eps is None else min(ep_count, watched_eps)
+                    actor_watchtime = effective_eps * avg_ep_runtime
                 if pid in actor_counts:
                     actor_counts[pid]["count"] += 1
-                    actor_counts[pid]["watchtime_mins"] += entry_watchtime
+                    actor_counts[pid]["watchtime_mins"] += actor_watchtime
                     actor_counts[pid]["genres"].update(entry_genres)
                     for eg in entry_genres:
                         actor_counts[pid]["genre_counts"][eg] = (
@@ -639,19 +655,33 @@ def get_top_actors():
                         "name": actor.get("name", ""),
                         "profile_path": actor.get("profile_path"),
                         "count": 1,
-                        "watchtime_mins": entry_watchtime,
+                        "watchtime_mins": actor_watchtime,
                         "genres": set(entry_genres),
                         "genre_counts": {eg: 1 for eg in entry_genres},
                     }
-            for crew in credits.get("crew") or []:
-                if crew.get("job") != "Director":
-                    continue
-                pid = crew.get("id")
+
+            for crew_m in (credits.get("crew") or []):
+                pid = crew_m.get("id")
                 if not pid:
                     continue
+                if is_movie:
+                    if crew_m.get("job") != "Director":
+                        continue
+                    crew_watchtime = movie_runtime
+                else:
+                    # aggregate_credits crew: director roles are in a jobs[] array
+                    dir_eps = sum(
+                        j.get("episode_count", 0)
+                        for j in (crew_m.get("jobs") or [])
+                        if j.get("job") == "Director"
+                    )
+                    if dir_eps == 0:
+                        continue
+                    effective_eps = dir_eps if watched_eps is None else min(dir_eps, watched_eps)
+                    crew_watchtime = effective_eps * avg_ep_runtime
                 if pid in director_counts:
                     director_counts[pid]["count"] += 1
-                    director_counts[pid]["watchtime_mins"] += entry_watchtime
+                    director_counts[pid]["watchtime_mins"] += crew_watchtime
                     director_counts[pid]["genres"].update(entry_genres)
                     for eg in entry_genres:
                         director_counts[pid]["genre_counts"][eg] = (
@@ -659,10 +689,10 @@ def get_top_actors():
                         )
                 else:
                     director_counts[pid] = {
-                        "name": crew.get("name", ""),
-                        "profile_path": crew.get("profile_path"),
+                        "name": crew_m.get("name", ""),
+                        "profile_path": crew_m.get("profile_path"),
                         "count": 1,
-                        "watchtime_mins": entry_watchtime,
+                        "watchtime_mins": crew_watchtime,
                         "genres": set(entry_genres),
                         "genre_counts": {eg: 1 for eg in entry_genres},
                     }
