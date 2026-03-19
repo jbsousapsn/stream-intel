@@ -507,15 +507,17 @@ def get_top_actors():
     if not lib_rows:
         return jsonify({"actors": [], "directors": []})
 
-    # Build a map of title → set of season numbers with watched episodes
+    # Build a map of title → set of season numbers with watched episodes, and watchtime
     ws_rows = db.execute(
-        "SELECT title, season_num FROM watched_seasons WHERE user_id=? AND ep_mask > 0",
+        "SELECT title, season_num, runtime_mins FROM watched_seasons WHERE user_id=? AND ep_mask > 0",
         (uid,),
     ).fetchall()
     watched_seasons_map: dict = {}
+    watchtime_map: dict = {}  # title_key → total watched runtime_mins
     for ws in ws_rows:
         key = ws["title"].strip().lower()
         watched_seasons_map.setdefault(key, set()).add(ws["season_num"])
+        watchtime_map[key] = watchtime_map.get(key, 0) + (ws["runtime_mins"] or 0)
 
     # Deduplicate by (normalised title, content_type)
     seen: set = set()
@@ -531,13 +533,15 @@ def get_top_actors():
                 for g in raw_genre.split(",")
                 if g.strip() and g.strip().lower() != "unknown"
             ]
+            tk = r["title"].strip().lower()
             unique.append(
                 {
                     "title": r["title"],
                     "media_type": "movie" if ct == "movie" else "tv",
                     "status": r["status"],
                     "genres": genres,
-                    "watched_seasons": watched_seasons_map.get(r["title"].strip().lower(), set()),
+                    "watched_seasons": watched_seasons_map.get(tk, set()),
+                    "watchtime_mins": watchtime_map.get(tk, 0),
                 }
             )
 
@@ -553,6 +557,7 @@ def get_top_actors():
                 "status": entry["status"],
                 "genres": entry["genres"],
                 "watched_seasons": entry["watched_seasons"],
+                "watchtime_mins": entry["watchtime_mins"],
             }
         return None
 
@@ -616,12 +621,14 @@ def get_top_actors():
                 credits = fut.result()
             except Exception:
                 continue
+            entry_watchtime: int = entry.get("watchtime_mins", 0)
             for actor in (credits.get("cast") or []):
                 pid = actor.get("id")
                 if not pid:
                     continue
                 if pid in actor_counts:
                     actor_counts[pid]["count"] += 1
+                    actor_counts[pid]["watchtime_mins"] += entry_watchtime
                     actor_counts[pid]["genres"].update(entry_genres)
                     for eg in entry_genres:
                         actor_counts[pid]["genre_counts"][eg] = (
@@ -632,6 +639,7 @@ def get_top_actors():
                         "name": actor.get("name", ""),
                         "profile_path": actor.get("profile_path"),
                         "count": 1,
+                        "watchtime_mins": entry_watchtime,
                         "genres": set(entry_genres),
                         "genre_counts": {eg: 1 for eg in entry_genres},
                     }
@@ -643,6 +651,7 @@ def get_top_actors():
                     continue
                 if pid in director_counts:
                     director_counts[pid]["count"] += 1
+                    director_counts[pid]["watchtime_mins"] += entry_watchtime
                     director_counts[pid]["genres"].update(entry_genres)
                     for eg in entry_genres:
                         director_counts[pid]["genre_counts"][eg] = (
@@ -653,6 +662,7 @@ def get_top_actors():
                         "name": crew.get("name", ""),
                         "profile_path": crew.get("profile_path"),
                         "count": 1,
+                        "watchtime_mins": entry_watchtime,
                         "genres": set(entry_genres),
                         "genre_counts": {eg: 1 for eg in entry_genres},
                     }
@@ -664,6 +674,7 @@ def get_top_actors():
                 "name": d["name"],
                 "profile_path": d["profile_path"],
                 "title_count": d["count"],
+                "watchtime_mins": d["watchtime_mins"],
                 "genres": sorted(d["genres"]),
                 "genre_counts": d["genre_counts"],
             }
@@ -680,6 +691,7 @@ def get_top_actors():
                 "name": d["name"],
                 "profile_path": d["profile_path"],
                 "title_count": d["count"],
+                "watchtime_mins": d["watchtime_mins"],
                 "genres": sorted(d["genres"]),
                 "genre_counts": d["genre_counts"],
             }
