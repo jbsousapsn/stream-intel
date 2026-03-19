@@ -1,9 +1,11 @@
 # backend/routes/profile.py
 import json
 import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Blueprint, g, jsonify, request
 from backend.auth import require_auth
 from backend.database import get_db
+from backend.routes.titles import _tmdb
 
 bp = Blueprint("profile", __name__, url_prefix="/api/profile")
 
@@ -467,3 +469,121 @@ def get_watchtime_stats():
             "watched_seasons_rows": ws,
         }
     )
+
+
+@bp.route("/top-actors", methods=["GET"])
+@require_auth
+def get_top_actors():
+    """Compute the user's most-watched actors and directors from their library.
+    Resolves each title via TMDB search then fetches credits — all in parallel.
+    Returns { actors: [...], directors: [...] }.
+    """
+    db = get_db()
+    uid = g.current_user["user_id"]
+
+    # Fetch library entries that the user has actively engaged with
+    lib_rows = db.execute(
+        """SELECT l.title, t.content_type
+           FROM library l
+           LEFT JOIN (
+               SELECT platform, title, content_type
+               FROM titles GROUP BY platform, title
+           ) t ON t.platform = l.platform AND t.title = l.title
+           WHERE l.user_id = ?
+             AND l.status NOT IN ('not-started') AND l.status IS NOT NULL
+           ORDER BY l.title""",
+        (uid,),
+    ).fetchall()
+
+    if not lib_rows:
+        return jsonify({"actors": [], "directors": []})
+
+    # Deduplicate by (normalised title, content_type)
+    seen: set = set()
+    unique: list = []
+    for r in lib_rows:
+        ct = (r["content_type"] or "movie").lower()
+        key = (r["title"].strip().lower(), ct)
+        if key not in seen:
+            seen.add(key)
+            unique.append({"title": r["title"], "media_type": "movie" if ct == "movie" else "tv"})
+
+    # Step 1 – resolve TMDB IDs in parallel
+    def _resolve(entry: dict):
+        mt = entry["media_type"]
+        data = _tmdb(f"/search/{mt}", query=entry["title"])
+        results = data.get("results") or []
+        if results:
+            return {"tmdb_id": results[0]["id"], "media_type": mt}
+        return None
+
+    resolved: list = []
+    with ThreadPoolExecutor(max_workers=20) as ex:
+        futs = {ex.submit(_resolve, t): t for t in unique}
+        for fut in as_completed(futs):
+            try:
+                res = fut.result()
+                if res:
+                    resolved.append(res)
+            except Exception:
+                pass
+
+    if not resolved:
+        return jsonify({"actors": [], "directors": []})
+
+    # Step 2 – fetch credits for every resolved title in parallel
+    actor_counts: dict = {}
+    director_counts: dict = {}
+
+    def _credits(entry: dict):
+        return _tmdb(f"/{entry['media_type']}/{entry['tmdb_id']}/credits")
+
+    with ThreadPoolExecutor(max_workers=20) as ex:
+        futs = [ex.submit(_credits, r) for r in resolved]
+        for fut in as_completed(futs):
+            try:
+                credits = fut.result()
+            except Exception:
+                continue
+            for actor in (credits.get("cast") or [])[:15]:
+                pid = actor.get("id")
+                if not pid:
+                    continue
+                if pid in actor_counts:
+                    actor_counts[pid]["count"] += 1
+                else:
+                    actor_counts[pid] = {
+                        "name": actor.get("name", ""),
+                        "profile_path": actor.get("profile_path"),
+                        "count": 1,
+                    }
+            for crew in (credits.get("crew") or []):
+                if crew.get("job") != "Director":
+                    continue
+                pid = crew.get("id")
+                if not pid:
+                    continue
+                if pid in director_counts:
+                    director_counts[pid]["count"] += 1
+                else:
+                    director_counts[pid] = {
+                        "name": crew.get("name", ""),
+                        "profile_path": crew.get("profile_path"),
+                        "count": 1,
+                    }
+
+    actors = sorted(
+        [{"person_id": pid, "name": d["name"], "profile_path": d["profile_path"], "title_count": d["count"]}
+         for pid, d in actor_counts.items()],
+        key=lambda x: x["title_count"],
+        reverse=True,
+    )[:15]
+
+    directors = sorted(
+        [{"person_id": pid, "name": d["name"], "profile_path": d["profile_path"], "title_count": d["count"]}
+         for pid, d in director_counts.items()],
+        key=lambda x: x["title_count"],
+        reverse=True,
+    )[:10]
+
+    return jsonify({"actors": actors, "directors": directors})
