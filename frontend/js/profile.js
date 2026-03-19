@@ -348,56 +348,23 @@ async function loadTopPeople() {
   const actorSec    = document.getElementById('profileTopActorsSection');
   const directorSec = document.getElementById('profileTopDirectorsSection');
 
-  // Build list of watched titles with full metadata from allTitles
-  const watched = Object.entries(libraryMap)
-    .filter(([, e]) => e.status === 'finished' || e.status === 'watching')
-    .map(([key]) => {
-      const [platform, ...rest] = key.split('::');
-      const titleLower = rest.join('::');
-      return allTitles?.find(t =>
-        t.platform === platform && t.title.toLowerCase().trim() === titleLower
-      );
-    })
-    .filter(Boolean)
-    .slice(0, 25);
+  // Call the server-side endpoint that does the heavy TMDB work in parallel
+  const data = await api('GET', '/api/profile/top-actors', null, { loader: false }).catch(() => null);
 
-  if (!watched.length) {
-    actorSec.style.display = 'none';
-    directorSec.style.display = 'none';
+  if (!data || (!data.actors?.length && !data.directors?.length)) {
+    if (actorSec)    actorSec.style.display    = 'none';
+    if (directorSec) directorSec.style.display = 'none';
     return;
   }
 
-  const actorMap    = {};
-  const directorMap = {};
-  const tmdbSilent  = path => api('GET', '/api/tmdb' + path, null, {loader: false});
+  // Map server response to the card format: { id, name, img, count }
+  const mapPerson = p => ({ id: p.person_id, name: p.name, img: p.profile_path, count: p.title_count });
 
-  const BATCH = 5;
-  for (let i = 0; i < watched.length; i += BATCH) {
-    await Promise.all(watched.slice(i, i + BATCH).map(async entry => {
-      const mt  = (entry.content_type || '').toLowerCase() === 'movie' ? 'movie' : 'tv';
-      const qs  = new URLSearchParams({ query: entry.title, type: mt });
-      if (entry.release_year) qs.set('year', entry.release_year);
-      const search = await api('GET', `/api/tmdb/search?${qs}`, null, {loader: false}).catch(() => null);
-      const id = search?.results?.[0]?.id;
-      if (!id) return;
+  const actors    = (data.actors    || []).map(mapPerson);
+  const directors = (data.directors || []).map(mapPerson);
 
-      const credits = await tmdbSilent(`/${mt}/${id}/credits`).catch(() => null);
-      if (!credits) return;
-
-      (credits.cast || []).slice(0, 10).forEach(a => {
-        if (!actorMap[a.id]) actorMap[a.id] = { id: a.id, name: a.name, img: a.profile_path, count: 0 };
-        actorMap[a.id].count++;
-      });
-      (credits.crew || []).filter(c => c.job === 'Director').forEach(d => {
-        if (!directorMap[d.id]) directorMap[d.id] = { id: d.id, name: d.name, img: d.profile_path, count: 0 };
-        directorMap[d.id].count++;
-      });
-    }));
-  }
-
-  const top = (map, n) => Object.values(map).sort((a, b) => b.count - a.count).slice(0, n);
-  _renderPeopleList(actorSec,    'profileTopActorsList',    top(actorMap,    20), 'profileActorsViewAll',    'actors');
-  _renderPeopleList(directorSec, 'profileTopDirectorsList', top(directorMap, 20), 'profileDirectorsViewAll', 'directors');
+  _renderPeopleList(actorSec,    'profileTopActorsList',    actors,    'profileActorsViewAll',    'actors');
+  _renderPeopleList(directorSec, 'profileTopDirectorsList', directors, 'profileDirectorsViewAll', 'directors');
 }
 
 const PEOPLE_PREVIEW = 8;
