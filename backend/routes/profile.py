@@ -565,7 +565,7 @@ def get_top_actors():
                 credits = fut.result()
             except Exception:
                 continue
-            for actor in (credits.get("cast") or [])[:50]:
+            for actor in (credits.get("cast") or []):
                 pid = actor.get("id")
                 if not pid:
                     continue
