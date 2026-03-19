@@ -479,26 +479,43 @@ def get_top_actors():
     """Compute the user's most-watched actors and directors from their library.
     Resolves each title via TMDB search then fetches credits — all in parallel.
     Returns { actors: [...], directors: [...] }.
+
+    Counting rules:
+      - finished titles: always count the actor/director.
+      - watching (in progress) TV: only count if the actor appeared in a season
+        where the user has at least one watched episode (ep_mask > 0).
+      - watching movies: always count (partial viewing still counts).
+      - watchlist / not-started: never counted.
     """
     db = get_db()
     uid = g.current_user["user_id"]
 
-    # Fetch library entries that the user has actively engaged with
+    # Fetch only actively-watched or finished library entries (not watchlist)
     lib_rows = db.execute(
-        """SELECT l.title, t.content_type, t.genre
+        """SELECT l.title, l.status, t.content_type, t.genre
            FROM library l
            LEFT JOIN (
                SELECT platform, title, content_type, genre
                FROM titles GROUP BY platform, title
            ) t ON t.platform = l.platform AND t.title = l.title
            WHERE l.user_id = ?
-             AND l.status NOT IN ('not-started') AND l.status IS NOT NULL
+             AND l.status IN ('watching', 'finished')
            ORDER BY l.title""",
         (uid,),
     ).fetchall()
 
     if not lib_rows:
         return jsonify({"actors": [], "directors": []})
+
+    # Build a map of title → set of season numbers with watched episodes
+    ws_rows = db.execute(
+        "SELECT title, season_num FROM watched_seasons WHERE user_id=? AND ep_mask > 0",
+        (uid,),
+    ).fetchall()
+    watched_seasons_map: dict = {}
+    for ws in ws_rows:
+        key = ws["title"].strip().lower()
+        watched_seasons_map.setdefault(key, set()).add(ws["season_num"])
 
     # Deduplicate by (normalised title, content_type)
     seen: set = set()
@@ -518,7 +535,9 @@ def get_top_actors():
                 {
                     "title": r["title"],
                     "media_type": "movie" if ct == "movie" else "tv",
+                    "status": r["status"],
                     "genres": genres,
+                    "watched_seasons": watched_seasons_map.get(r["title"].strip().lower(), set()),
                 }
             )
 
@@ -531,7 +550,9 @@ def get_top_actors():
             return {
                 "tmdb_id": results[0]["id"],
                 "media_type": mt,
+                "status": entry["status"],
                 "genres": entry["genres"],
+                "watched_seasons": entry["watched_seasons"],
             }
         return None
 
@@ -549,16 +570,42 @@ def get_top_actors():
     if not resolved:
         return jsonify({"actors": [], "directors": []})
 
-    # Step 2 – fetch credits for every resolved title in parallel
+    # Step 2 – fetch credits for every resolved title in parallel.
+    # For finished TV / all movies: use aggregate_credits / movie credits.
+    # For watching TV: fetch per-season credits only for seasons with watched
+    # episodes, then merge cast into a deduplicated list.
     actor_counts: dict = {}
     director_counts: dict = {}
 
     def _credits(entry: dict):
-        # TV shows: use aggregate_credits to get cast across ALL seasons,
-        # not just the latest season (which /credits returns for TV).
-        if entry["media_type"] == "tv":
-            return _tmdb(f"/tv/{entry['tmdb_id']}/aggregate_credits")
-        return _tmdb(f"/movie/{entry['tmdb_id']}/credits")
+        tid = entry["tmdb_id"]
+        mt = entry["media_type"]
+        status = entry["status"]
+        seasons: set = entry.get("watched_seasons", set())
+
+        if mt == "movie":
+            return _tmdb(f"/movie/{tid}/credits")
+
+        if status == "finished":
+            return _tmdb(f"/tv/{tid}/aggregate_credits")
+
+        # watching TV — only count seasons the user has actually watched
+        if not seasons:
+            return {"cast": [], "crew": []}
+
+        merged_cast: dict = {}
+        merged_crew: dict = {}
+        for sn in seasons:
+            data = _tmdb(f"/tv/{tid}/season/{sn}/credits")
+            for actor in data.get("cast") or []:
+                pid = actor.get("id")
+                if pid and pid not in merged_cast:
+                    merged_cast[pid] = actor
+            for crew_m in data.get("crew") or []:
+                pid = crew_m.get("id")
+                if pid and crew_m.get("job") == "Director" and pid not in merged_crew:
+                    merged_crew[pid] = crew_m
+        return {"cast": list(merged_cast.values()), "crew": list(merged_crew.values())}
 
     with ThreadPoolExecutor(max_workers=20) as ex:
         futs = {ex.submit(_credits, r): r for r in resolved}
