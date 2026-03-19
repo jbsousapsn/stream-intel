@@ -104,6 +104,15 @@ def get_titles():
     if args.get("search"):
         conditions.append("t.title LIKE ?")
         params.append(f"%{args['search']}%")
+    if args.get("genre"):
+        genres = [g.strip() for g in args["genre"].split(",") if g.strip()]
+        if len(genres) == 1:
+            conditions.append("t.genre LIKE ?")
+            params.append(f"%{genres[0]}%")
+        elif len(genres) > 1:
+            genre_or = " OR ".join(["t.genre LIKE ?" for _ in genres])
+            conditions.append(f"({genre_or})")
+            params.extend([f"%{g}%" for g in genres])
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 

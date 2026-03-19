@@ -42,14 +42,6 @@ def register():
         return jsonify({"error": "Password must be at least 6 characters"}), 400
 
     db = get_db()
-    # Only the very first user can register freely; after that, an admin must be logged in
-    existing = db.execute("SELECT COUNT(*) as n FROM users").fetchone()["n"]
-    if existing > 0:
-        if not verify_token(_extract_token()):
-            return jsonify(
-                {"error": "Registration is closed — ask an admin to add you."}
-            ), 403
-
     try:
         db.execute(
             "INSERT INTO users (username, password_hash, auth_type) VALUES (?,?,?)",
