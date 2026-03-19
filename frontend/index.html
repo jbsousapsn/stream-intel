@@ -24,6 +24,17 @@
     <div class="auth-logo-mark">StreamIntel</div>
     <div class="auth-title">Stream Monitor</div>
     <div class="auth-sub" id="authSub">Sign in to access your personalised streaming dashboard.</div>
+
+    <!-- Mode toggle — pill segmented control (matches RN LoginScreen) -->
+    <div class="auth-mode-toggle" id="authModeToggle">
+      <button class="auth-mode-btn active" id="authModeLogin" onclick="switchAuthMode('login')">Sign In</button>
+      <button class="auth-mode-btn" id="authModeRegister" onclick="switchAuthMode('register')">Create Account</button>
+    </div>
+
+    <div class="auth-field" id="authDisplayNameField" style="display:none">
+      <label>Display Name</label>
+      <input class="auth-input" id="authDisplayName" type="text" placeholder="Display name (optional)" autocomplete="name">
+    </div>
     <div class="auth-field">
       <label>Username</label>
       <input class="auth-input" id="authUsername" type="text" placeholder="Enter username" autocomplete="username">
@@ -32,7 +43,11 @@
       <label>Password</label>
       <input class="auth-input" id="authPassword" type="password" placeholder="Enter password" autocomplete="current-password">
     </div>
-    <button class="auth-btn" id="authBtn" onclick="doLogin()">Sign In</button>
+    <div class="auth-field" id="authConfirmField" style="display:none">
+      <label>Confirm Password</label>
+      <input class="auth-input" id="authConfirmPassword" type="password" placeholder="Confirm password" autocomplete="new-password">
+    </div>
+    <button class="auth-btn" id="authBtn" onclick="doAuthSubmit()">Sign In</button>
     <div class="auth-divider">or</div>
     <button class="auth-btn google-btn" id="googleBtn" onclick="doGoogleLogin()">
       <svg class="google-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -232,14 +247,7 @@
       <button class="library-sub-tab" data-lsub="finished"   data-short="Done"  onclick="setView('finished',this)"><span class="sub-emoji">✅</span><span class="sub-label">Finished</span></button>
     </div>
 
-      <!-- Status filter sub-bar (visible when on All/Movies/TV/Trending views) -->
-      <div class="library-sub-bar" id="statusSubBar">
-        <button class="library-sub-tab active" data-sf="all"        data-short="All"   onclick="setStatusFilter('all',this)"><span class="sub-emoji">📚</span><span class="sub-label">All</span></button>
-        <button class="library-sub-tab"        data-sf="favourites" data-short="Favs"  onclick="setStatusFilter('favourites',this)"><span class="sub-emoji">❤️</span><span class="sub-label">Favourites</span></button>
-        <button class="library-sub-tab"        data-sf="watchlist"  data-short="List"  onclick="setStatusFilter('watchlist',this)"><span class="sub-emoji">🔖</span><span class="sub-label">Watchlist</span></button>
-        <button class="library-sub-tab"        data-sf="watching"   data-short="On"    onclick="setStatusFilter('watching',this)"><span class="sub-emoji">▶️</span><span class="sub-label">Watching</span></button>
-        <button class="library-sub-tab"        data-sf="finished"   data-short="Done"  onclick="setStatusFilter('finished',this)"><span class="sub-emoji">✅</span><span class="sub-label">Finished</span></button>
-      </div>
+      <!-- Status filters removed per UI change request -->
 
       <!-- ── Sub-toolbar (filters, shown for content views) ── -->
       <div class="toolbar" id="subToolbar">
@@ -331,7 +339,12 @@
 
     <!-- ── Upcoming panel ── -->
     <div id="upcomingPanel" style="display:none">
+      <div class="upcoming-tab-bar" id="upcomingTabBar">
+        <button class="upcoming-tab-btn active" data-tab="upcoming" onclick="switchUpcomingTab('upcoming',this)">Upcoming</button>
+        <button class="upcoming-tab-btn" data-tab="aired" onclick="switchUpcomingTab('aired',this)">Aired</button>
+      </div>
       <div class="upcoming-wrap" id="upcomingWrap"></div>
+      <div class="upcoming-wrap" id="airedWrap" style="display:none"></div>
     </div>
 
     <!-- ── Actors panel ── -->
@@ -540,6 +553,7 @@
             </div>
           </div>
         </div>
+        <div id="mMoreLikeThis" class="mlt-section" style="display:none"></div>
       </div>
 
       <!-- Cast panel -->
@@ -678,19 +692,15 @@
     <!-- Movies -->
     <div class="profile-section">
       <div class="profile-section-title">🎬 Movies</div>
-      <div class="profile-split">
-        <div class="profile-stats-grid" id="profileMovieGrid"></div>
-        <div class="profile-time-pill" id="profileMovieTime"></div>
-      </div>
+      <div class="profile-stats-grid" id="profileMovieGrid"></div>
+      <div class="profile-watch-card" id="profileMovieTime"></div>
     </div>
 
     <!-- TV -->
     <div class="profile-section">
       <div class="profile-section-title">📺 TV Shows</div>
-      <div class="profile-split">
-        <div class="profile-stats-grid" id="profileTVGrid"></div>
-        <div class="profile-time-pill" id="profileTVTime"></div>
-      </div>
+      <div class="profile-stats-grid" id="profileTVGrid"></div>
+      <div class="profile-watch-card" id="profileTVTime"></div>
     </div>
 
     <!-- Genres -->
@@ -702,7 +712,8 @@
     <!-- Library overview -->
     <div class="profile-section">
       <div class="profile-section-title">Library</div>
-      <div class="profile-stats-grid" id="profileLibraryGrid"></div>
+      <div class="profile-stats-grid profile-lib-row1" id="profileLibraryGrid"></div>
+      <div class="profile-stats-grid profile-lib-row2" id="profileLibraryGrid2"></div>
     </div>
 
     <!-- Top Actors -->
@@ -778,8 +789,70 @@
       </div>
     </div>
 
+    <!-- Change password (only for password-auth users) -->
+    <div class="profile-section" id="changePasswordSection" style="display:none">
+      <div class="profile-section-title">🔒 Change Password</div>
+      <div class="profile-changepw-form">
+        <div class="auth-field">
+          <label>Current Password</label>
+          <input class="auth-input" id="cpwOldPassword" type="password" placeholder="Current password" autocomplete="current-password">
+        </div>
+        <div class="auth-field">
+          <label>New Password</label>
+          <input class="auth-input" id="cpwNewPassword" type="password" placeholder="New password (min 6 chars)" autocomplete="new-password">
+        </div>
+        <div class="auth-field">
+          <label>Confirm New Password</label>
+          <input class="auth-input" id="cpwConfirmPassword" type="password" placeholder="Confirm new password" autocomplete="new-password">
+        </div>
+        <div class="auth-error" id="cpwError"></div>
+        <button class="auth-btn" id="cpwBtn" onclick="doChangePassword()" style="margin-top:4px">Update Password</button>
+      </div>
+    </div>
+
+    <!-- Sign out button -->
+    <div class="profile-section">
+      <div style="padding:12px 0 32px; display:flex; justify-content:center;">
+        <button class="profile-signout-btn" onclick="doLogout()">Sign Out</button>
+      </div>
+    </div>
+
     <!-- Save note -->
     <div class="profile-save-hint" id="profileSaveHint"></div>
+  </div>
+</div>
+
+<!-- ── Rating detail sheet ── -->
+<div class="rating-sheet-backdrop" id="ratingSheetBackdrop" onclick="closeRatingSheet()"></div>
+<div class="rating-detail-sheet" id="ratingDetailSheet">
+  <div class="rating-sheet-handle"></div>
+  <div class="rating-sheet-header">
+    <div class="rating-sheet-title-wrap">
+      <div class="rating-sheet-title" id="ratingSheetTitle"></div>
+      <div class="rating-sheet-sub" id="ratingSheetSub"></div>
+    </div>
+    <button class="rating-sheet-close" onclick="closeRatingSheet()">✕</button>
+  </div>
+  <div class="rating-sheet-body">
+    <div>
+      <div class="rating-sheet-section-label">STATUS</div>
+      <div class="rating-sheet-status-row" id="ratingSheetStatusRow"></div>
+    </div>
+    <div>
+      <div class="rating-sheet-section-label">YOUR RATING</div>
+      <div class="rating-sheet-stars-row" id="ratingSheetStarsRow"></div>
+    </div>
+    <div class="rating-sheet-actions">
+      <button class="rating-sheet-action-btn" id="ratingSheetViewBtn">
+        <span class="rating-sheet-action-icon">↗️</span>
+        <span>View Title</span>
+        <span class="rating-sheet-action-arrow">›</span>
+      </button>
+      <button class="rating-sheet-action-btn danger" id="ratingSheetDeleteBtn">
+        <span class="rating-sheet-action-icon">🗑️</span>
+        <span>Remove from Library</span>
+      </button>
+    </div>
   </div>
 </div>
 

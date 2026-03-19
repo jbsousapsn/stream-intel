@@ -1188,9 +1188,159 @@ async function renderUpcoming(force = false) {
 
 function _refreshUpcoming() {
   _upcomingDirty = true;
+  _airedLoaded = false;
   Object.keys(_tmdbShowData).forEach(k => delete _tmdbShowData[k]);
   // Pass force=1 so the server discards its cache for this user's shows
   renderUpcoming(true);
+}
+
+// ── Upcoming / Aired tab switching ────────────────────────────────────────────
+let _activeUpcomingTab = 'upcoming';
+let _airedLoaded = false;
+
+function switchUpcomingTab(tab, btn) {
+  if (tab === _activeUpcomingTab) return;
+  _activeUpcomingTab = tab;
+  document.querySelectorAll('.upcoming-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('upcomingWrap').style.display = tab === 'upcoming' ? '' : 'none';
+  document.getElementById('airedWrap').style.display    = tab === 'aired'    ? '' : 'none';
+  if (tab === 'aired' && !_airedLoaded) renderAired();
+}
+
+// ── Aired episodes ────────────────────────────────────────────────────────────
+const AIRED_PAGE_SIZE = 50;
+let _airedEpStore = {};
+
+async function renderAired() {
+  const wrap = document.getElementById('airedWrap');
+  if (!wrap) return;
+  wrap.innerHTML = `<div class="upcoming-fetching"><span class="spinner"></span> Checking for recently aired episodes…</div>`;
+
+  // Collect all "watching" TV shows
+  const watchingShows = allTitles.filter(t => {
+    if (t.content_type !== 'tv') return false;
+    const e = getEntry(t);
+    return e.status === 'watching' || e.status === 'finished' || e.is_fav;
+  });
+
+  if (!watchingShows.length) {
+    wrap.innerHTML = `<div class="empty"><div class="empty-icon">📅</div><div class="empty-title">No tracked shows</div><div class="empty-sub">Add TV shows to Watching or Finished to see recently aired episodes.</div></div>`;
+    _airedLoaded = true;
+    return;
+  }
+
+  const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  const allAired = [];
+
+  // Fetch recent season data for each show from TMDB
+  for (const t of watchingShows) {
+    try {
+      const tk = titleKey(t);
+      const sd = _tmdbShowData[tk];
+      if (!sd?.tmdbId) continue;
+
+      // Get the most recent season (likely to have aired episodes)
+      const det = await tmdbGet(`/tv/${sd.tmdbId}?append_to_response=external_ids`);
+      if (!det?.seasons?.length) continue;
+
+      const recentSeasons = (det.seasons || [])
+        .filter(s => s.season_number > 0)
+        .slice(-2); // last 2 seasons
+
+      for (const season of recentSeasons) {
+        const seasonData = await tmdbGet(`/tv/${sd.tmdbId}/season/${season.season_number}`);
+        if (!seasonData?.episodes?.length) continue;
+
+        for (const ep of seasonData.episodes) {
+          if (!ep.air_date) continue;
+          const airDate = new Date(ep.air_date + 'T12:00:00');
+          if (airDate > today) continue; // skip future
+          // Only include episodes from last 90 days
+          const diffMs = today - airDate;
+          const diffDays = Math.floor(diffMs / 86400000);
+          if (diffDays > 90) continue;
+
+          const epKey = `${t.title}::S${ep.season_number}E${ep.episode_number}`;
+          _airedEpStore[epKey] = {ep, t, sd: {poster_thumb: sd.posterThumb}};
+          allAired.push({t, sd, airDate, diffDays, ep, epKey});
+        }
+      }
+    } catch (e) { /* skip show on error */ }
+  }
+
+  if (!allAired.length) {
+    wrap.innerHTML = `<div class="empty"><div class="empty-icon">📅</div><div class="empty-title">No recently aired episodes</div><div class="empty-sub">No episodes from your tracked shows aired in the last 90 days.</div></div>`;
+    _airedLoaded = true;
+    return;
+  }
+
+  // Sort newest first
+  allAired.sort((a, b) => b.airDate - a.airDate);
+
+  // Group by date
+  const buckets = {};
+  const bucketOrder = [];
+  for (const item of allAired) {
+    const {airDate, diffDays} = item;
+    let label;
+    if (diffDays === 0) label = 'Today';
+    else if (diffDays === 1) label = 'Yesterday';
+    else label = `${MONTH_SHORT[airDate.getMonth()]} ${airDate.getDate()}, ${airDate.getFullYear()}`;
+    if (!buckets[label]) { buckets[label] = []; bucketOrder.push(label); }
+    buckets[label].push(item);
+  }
+
+  // Render (show first page)
+  const visibleBuckets = bucketOrder.slice(0, AIRED_PAGE_SIZE);
+  const html = visibleBuckets.map(label => `
+    <div class="upcoming-group">
+      <div class="upcoming-day-pill${label==='Today'?' upc-pill-today':label==='Yesterday'?' upc-pill-tomorrow':''}">${label}</div>
+      <div class="upcoming-list">
+        ${buckets[label].map(item => _renderAiredEpCard(item)).join('')}
+      </div>
+    </div>`).join('');
+
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('[data-epkey]').forEach(el => {
+    const epKey = el.getAttribute('data-epkey');
+    el.addEventListener('click', () => {
+      const stored = _airedEpStore[epKey];
+      if (stored) openEpisodeDetail(epKey);
+    });
+  });
+  _airedLoaded = true;
+}
+
+function _renderAiredEpCard({t, sd, diffDays, airDate, ep, epKey}) {
+  const showTitle = t ? t.title : ep.title_key || '';
+  const sNum = String(ep.season_number).padStart(2,'0');
+  const eNum = String(ep.episode_number).padStart(2,'0');
+  const epLabel = `S${sNum}E${eNum}`;
+
+  const thumbUrl = ep.still_path
+    ? `https://image.tmdb.org/t/p/w300${ep.still_path}`
+    : (sd?.poster_thumb || '');
+  const thumbHtml = thumbUrl
+    ? `<div class="upc-thumb" style="background-image:url(${thumbUrl})"></div>`
+    : `<div class="upc-thumb upc-thumb-ph">${t?.content_type==='movie'?'🎬':'📺'}</div>`;
+
+  const daysAgoText = diffDays === 0 ? 'Today' : diffDays === 1 ? 'Yesterday' : `${diffDays}d ago`;
+
+  return `
+    <div class="upc-card" data-epkey="${escAttr(epKey)}">
+      ${thumbHtml}
+      <div class="upc-body">
+        <div class="upc-show-title">${escHtml(showTitle)}</div>
+        <div class="upc-ep-label">${epLabel}${ep.name ? ' · ' + escHtml(ep.name) : ''}</div>
+        <div class="upc-ep-meta">
+          <span class="upc-meta-tag">${daysAgoText}</span>
+          ${ep.runtime ? `<span>⏱ ${ep.runtime}m</span>` : ''}
+          ${ep.vote_average ? `<span>⭐ ${ep.vote_average.toFixed(1)}</span>` : ''}
+        </div>
+      </div>
+    </div>`;
 }
 
 // ── Actors panel ──────────────────────────────────────────────────────────────
@@ -1870,6 +2020,7 @@ function renderCard(t, i) {
         </div>
         ${t.content_type==='tv'&&(t.num_seasons>0||t.is_ongoing!=null)?`<div class="card-seasons">${[t.num_seasons>0?`${t.num_seasons} season${t.num_seasons!==1?'s':''}`:null,t.is_ongoing!=null?`<span class="ongoing-tag ${t.is_ongoing?'ongoing':'ended'}">${t.is_ongoing?'Ongoing':'Ended'}</span>`:null].filter(Boolean).join(' ')}</div>`:t.content_type==='movie'&&t.runtime_mins>0?`<div class="card-seasons">${t.runtime_mins} min</div>`:''}
         ${(imdb||rt||t.maturity_rating)?`<div class="card-scores">${imdb}${rt}${t.maturity_rating?`<span class="rating-tag">${t.maturity_rating}</span>`:''}</div>`:''}
+        ${entry.user_rating > 0 ? `<div class="card-user-rating">${'★'.repeat(entry.user_rating)}${'☆'.repeat(5 - entry.user_rating)}</div>` : ''}
         ${genres?`<div class="genres">${genres}</div>`:''}
         ${platformBadgesHtml}
       </div>
@@ -1892,7 +2043,7 @@ async function loadCardPoster(t) {
 
 // ── Episode detail overlay ───────────────────────────────────────────────────
 function openEpisodeDetail(epKey) {
-  const stored = _upcomingEpStore[epKey];
+  const stored = _upcomingEpStore[epKey] || _airedEpStore[epKey];
   if (!stored) return;
   const {ep, t, sd} = stored;
 
@@ -2433,6 +2584,8 @@ window.addEventListener('popstate', e => {
       closePeopleAll();
     } else if (watchHistoryOverlay && watchHistoryOverlay.classList.contains('open')) {
       closeWatchHistory();
+    } else if (document.getElementById('ratingSheetBackdrop')?.classList.contains('open')) {
+      closeRatingSheet();
     } else if (profileOverlay && profileOverlay.classList.contains('open')) {
       closeProfile();
     } else if (friendsOverlay && !friendsOverlay.classList.contains('hidden')) {

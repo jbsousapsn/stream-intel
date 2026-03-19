@@ -753,6 +753,10 @@ async function openFriendProfile(uid) {
   }
 
   html += `
+    <div class="profile-section" id="fpoRatingsSection" style="display:none">
+      <div class="profile-section-header"><div class="profile-section-title">Their Ratings</div></div>
+      <div class="fpo-ratings-list" id="fpoRatingsList"></div>
+    </div>
     <div class="profile-section" id="fpoActorsSection" style="display:none">
       <div class="profile-section-header"><div class="profile-section-title">Frequent Actors</div></div>
       <div class="profile-people-list" id="fpoActorsList"></div>
@@ -764,11 +768,50 @@ async function openFriendProfile(uid) {
 
   document.getElementById('fpoContent').innerHTML = html;
   loadFriendPeople(uid);
+  if (data.library_public) _loadFriendRatings(uid);
 }
 
 function closeFriendProfile() {
   document.getElementById('friendProfileOverlay')?.classList.remove('open');
   document.body.style.overflow = '';
+}
+
+// ── Friend ratings loader ────────────────────────────────────────────────────
+let _fpoRatingsExpanded = false;
+async function _loadFriendRatings(uid) {
+  const section = document.getElementById('fpoRatingsSection');
+  const list    = document.getElementById('fpoRatingsList');
+  if (!section || !list) return;
+
+  const data = await api('GET', `/api/friends/${uid}/library`, null, {loader: false}).catch(() => null);
+  if (!data?.library?.length) return;
+
+  const rated = data.library.filter(r => (r.user_rating || 0) > 0)
+                             .sort((a, b) => (b.user_rating || 0) - (a.user_rating || 0));
+  if (!rated.length) return;
+
+  section.style.display = '';
+  _fpoRatingsExpanded = false;
+  const LIMIT = 10;
+
+  function render() {
+    const visible = _fpoRatingsExpanded ? rated : rated.slice(0, LIMIT);
+    list.innerHTML = visible.map(r => {
+      const stars = '★'.repeat(r.user_rating) + '☆'.repeat(5 - r.user_rating);
+      const typeTag = r.content_type === 'movie' ? '🎬' : r.content_type === 'tv' ? '📺' : '';
+      return `<div class="fpo-rating-row">
+        <div class="fpo-rating-stars">${stars}</div>
+        <div class="fpo-rating-info">
+          <span class="fpo-rating-title">${escHtml(r.title)}</span>
+          <span class="fpo-rating-meta">${r.release_year || ''} ${typeTag} ${formatPlatform(r.platform)}</span>
+        </div>
+      </div>`;
+    }).join('')
+    + (rated.length > LIMIT && !_fpoRatingsExpanded
+       ? `<button class="fpo-ratings-toggle" onclick="_fpoRatingsExpanded=true;_loadFriendRatings(${uid})">View all ${rated.length} →</button>`
+       : '');
+  }
+  render();
 }
 
 // ── Friend library overlay ───────────────────────────────────────────────────

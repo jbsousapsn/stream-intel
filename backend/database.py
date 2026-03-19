@@ -321,11 +321,9 @@ def _apply_migrations(conn: sqlite3.Connection):
     if "pic_position_y" not in cols:
         print("[DB] Adding pic_position_y column to users")
         conn.execute("ALTER TABLE users ADD COLUMN pic_position_y INTEGER DEFAULT 50")
-
     if "pic_position_x" not in cols:
         print("[DB] Adding pic_position_x column to users")
         conn.execute("ALTER TABLE users ADD COLUMN pic_position_x REAL DEFAULT 0.5")
-
     if "pic_scale" not in cols:
         print("[DB] Adding pic_scale column to users")
         conn.execute("ALTER TABLE users ADD COLUMN pic_scale REAL DEFAULT 1.0")
@@ -672,3 +670,21 @@ def init_db():
                 "[DB] Fresh DB created after corruption recovery. Re-upload your data via /api/upload-db.",
                 flush=True,
             )
+
+
+def ensure_schema(conn: sqlite3.Connection):
+    """Ensure the database schema exists on the given connection.
+
+    This is a lightweight helper used by background tools (scraper/enricher)
+    which open their own sqlite connections rather than using the Flask
+    `get_db()` helper. If the core tables are missing, we execute the full
+    SCHEMA script and then run migrations to bring the database up-to-date.
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='titles'")
+    if not cur.fetchone():
+        # No titles table → assume DB is uninitialised; create full schema
+        conn.executescript(SCHEMA)
+        conn.commit()
+    # Run migrations to ensure any missing columns/indexes are added
+    _apply_migrations(conn)

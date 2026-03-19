@@ -90,6 +90,10 @@ async function loadProfile() {
   const libToggle = document.getElementById('libraryPublicToggle');
   if (libToggle) libToggle.checked = !!data.library_public;
 
+  // ── Change password section (only for password-auth users) ────────────────
+  const cpwSection = document.getElementById('changePasswordSection');
+  if (cpwSection) cpwSection.style.display = data.auth_type === 'password' ? '' : 'none';
+
   const s = data.stats;
   // Override server-side genre counts with client-side computed ones so the
   // chip number matches the library genre filter result exactly.
@@ -125,7 +129,7 @@ async function loadProfile() {
     statCard('In Library',s.movies_in_library,'',      'library',  'movie'),
   ].join('');
   document.getElementById('profileMovieTime').innerHTML =
-    `<span class="pill-label">Watch time</span><span class="pill-value">${s.movie_watch_time.label || '0m'}</span>`;
+    `<span class="watch-card-label">Watch Time</span><span class="watch-card-value">${s.movie_watch_time.label || '0m'}</span>`;
 
   // ── TV section ────────────────────────────────────────────────────────────
   document.getElementById('profileTVGrid').innerHTML = [
@@ -134,12 +138,17 @@ async function loadProfile() {
     statCard('Episodes Watched',s.episodes_watched,  ''),
   ].join('');
   document.getElementById('profileTVTime').innerHTML =
-    `<span class="pill-label">Watch time</span><span class="pill-value">${s.tv_watch_time.label || '0m'}</span>`;
+    `<span class="watch-card-label">Watch Time</span><span class="watch-card-value">${s.tv_watch_time.label || '0m'}</span>`;
 
   // ── Library overview ──────────────────────────────────────────────────────
   document.getElementById('profileLibraryGrid').innerHTML = [
     statCard('Total in Library', s.total_in_library, '',       'library'),
     statCard('Favourites',       s.favourites,       'tomato', 'favourites'),
+  ].join('');
+  document.getElementById('profileLibraryGrid2').innerHTML = [
+    statCard('Watchlist',   s.watchlist_count,  'purple',   'watchlist'),
+    statCard('In Progress', s.watching_count,   'watching', 'watching'),
+    statCard('Finished',    s.finished_count,   'finished', 'finished'),
   ].join('');
 
   // ── Genres ────────────────────────────────────────────────────────────────
@@ -149,11 +158,10 @@ async function loadProfile() {
     const maxCount = s.top_genres[0].count || 1;
     document.getElementById('profileGenres').innerHTML = s.top_genres.map(g => `
       <div class="profile-genre-chip" onclick="_navToGenre('${g.genre.replace(/'/g,"\\'")}')">
-        <span>${genreEmoji(formatGenre(g.genre))} ${formatGenre(g.genre)}</span>
-        <div class="profile-genre-bar-wrap">
-          <div class="profile-genre-bar" style="width:${Math.round(g.count/maxCount*100)}%"></div>
-        </div>
-        <span style="font-size:11px;color:var(--muted)">${g.count}</span>
+        <span class="genre-chip-name">${genreEmoji(formatGenre(g.genre))} ${formatGenre(g.genre)}</span>
+        <div class="profile-genre-bar-wrap"><div class="profile-genre-bar" style="width:${Math.round(g.count/maxCount*100)}%"></div></div>
+        <span class="genre-chip-count">${g.count}</span>
+        <span class="genre-chip-arrow">›</span>
       </div>`).join('');
   } else {
     genresSec.style.display = 'none';
@@ -203,47 +211,116 @@ async function loadProfileRatings(sort, btn) {
         <div class="profile-rating-sub">${r.year ? r.year + ' · ' : ''}${r.platform || ''}</div>
       </div>
       <span class="profile-rating-type ${r.content_type === 'tv' ? 'tag-tv' : 'tag-movie'}">${r.content_type === 'tv' ? 'TV' : 'Film'}</span>
-      <button class="rating-menu-btn" onclick="event.stopPropagation();openRatingMenu(event,${i})" title="Options">⋮</button>
+      <button class="rating-menu-btn" onclick="event.stopPropagation();openRatingSheet(${i})" title="Options">⋮</button>
     </div>`).join('');
 }
 
-function openRatingMenu(e, idx) {
-  document.getElementById('_ratingMenu')?.remove();
-  const menu = document.createElement('div');
-  menu.id = '_ratingMenu';
-  menu.className = 'rating-item-menu';
-  menu.innerHTML =
-    `<button onclick="profileRatingShare(${idx})">📤 Share</button>` +
-    `<button class="danger" onclick="profileRatingDelete(${idx})">🗑️ Delete rating</button>`;
-  document.body.appendChild(menu);
-  // Position near button
-  const rect = e.currentTarget.getBoundingClientRect();
-  const mw = menu.offsetWidth || 160;
-  menu.style.top  = (rect.bottom + 4) + 'px';
-  menu.style.left = Math.max(8, rect.right - mw) + 'px';
-  // Close on outside click
-  setTimeout(() => {
-    document.addEventListener('click', () => document.getElementById('_ratingMenu')?.remove(), {once: true});
-  }, 0);
-}
+// ── Rating detail bottom sheet ───────────────────────────────────────────────
+let _ratingSheetIdx = null;
+let _ratingSheetRating = 0;
 
-function profileRatingShare(idx) {
-  document.getElementById('_ratingMenu')?.remove();
+function openRatingSheet(idx) {
+  _ratingSheetIdx = idx;
   const r = _sortedRatingsCache[idx];
   if (!r) return;
-  // Build a compatible title object so openShareMsgDialog can use it
-  const t = (typeof allTitles !== 'undefined' && allTitles?.find(x =>
-    x.platform === r.platform && x.title.toLowerCase() === r.title.toLowerCase()
-  )) || {platform: r.platform, title: r.title, content_type: r.content_type || 'movie', release_year: r.year || null};
-  window.currentModalTitle = t;
-  if (typeof openShareMsgDialog === 'function') openShareMsgDialog();
+
+  // Title + sub
+  document.getElementById('ratingSheetTitle').textContent = r.title;
+  _updateRatingSheetSub(r);
+
+  // Status buttons
+  _updateRatingSheetStatusRow(r.status || 'not-started');
+
+  // Stars
+  _ratingSheetRating = r.user_rating || 0;
+  _renderRatingSheetStars(_ratingSheetRating);
+
+  // Action buttons
+  document.getElementById('ratingSheetViewBtn').onclick = () => {
+    closeRatingSheet();
+    openTitleFromProfile(r.platform, r.title);
+  };
+  document.getElementById('ratingSheetDeleteBtn').onclick = ratingSheetDelete;
+
+  // Push history and open
+  if (!_handlingPop) history.pushState({ modal: 'ratingSheet' }, '');
+  document.getElementById('ratingSheetBackdrop').classList.add('open');
+  document.getElementById('ratingDetailSheet').classList.add('open');
 }
 
-async function profileRatingDelete(idx) {
-  document.getElementById('_ratingMenu')?.remove();
-  const r = _sortedRatingsCache[idx];
+function _updateRatingSheetSub(r) {
+  const statusLabel = { watchlist: 'Watchlist', watching: 'In Progress', finished: 'Finished' }[r.status] || '';
+  const statusCls   = r.status === 'watching' ? 'watching' : (r.status || '');
+  document.getElementById('ratingSheetSub').innerHTML =
+    `${r.year ? r.year + ' · ' : ''}${escHtml(r.platform || '')}` +
+    (statusLabel ? `<span class="rs-status-chip ${statusCls}">${statusLabel}</span>` : '');
+}
+
+function _updateRatingSheetStatusRow(currentStatus) {
+  const defs = [
+    { key: 'watchlist', label: 'Watchlist',   icon: '🔖' },
+    { key: 'watching',  label: 'In Progress', icon: '▶' },
+    { key: 'finished',  label: 'Finished',    icon: '✓' },
+  ];
+  const activeCls = { watchlist: 'active-watchlist', watching: 'active-watching', finished: 'active-finished' };
+  document.getElementById('ratingSheetStatusRow').innerHTML = defs.map(s =>
+    `<button class="rs-status-btn${currentStatus === s.key ? ' ' + activeCls[s.key] : ''}" onclick="ratingSheetSetStatus('${s.key}')">
+       <span>${s.icon}</span><span>${s.label}</span>${currentStatus === s.key ? '<span>✓</span>' : ''}
+     </button>`
+  ).join('');
+}
+
+function closeRatingSheet() {
+  document.getElementById('ratingSheetBackdrop').classList.remove('open');
+  document.getElementById('ratingDetailSheet').classList.remove('open');
+  _ratingSheetIdx = null;
+}
+
+function _renderRatingSheetStars(rating) {
+  const row = document.getElementById('ratingSheetStarsRow');
+  let html = '';
+  for (let i = 1; i <= 5; i++) {
+    html += `<button class="rs-star-btn${i <= rating ? ' lit' : ''}" onmouseenter="_rsStarHover(${i})" onmouseleave="_rsStarUnhover()" onclick="ratingSheetSetRating(${i})">★</button>`;
+  }
+  html += `<span class="rs-rating-label" id="ratingSheetRatingLabel">${rating ? rating + '/5' : '—'}</span>`;
+  row.innerHTML = html;
+}
+
+function _rsStarHover(n) {
+  document.querySelectorAll('.rs-star-btn').forEach((btn, i) => btn.classList.toggle('lit', i < n));
+}
+
+function _rsStarUnhover() {
+  _renderRatingSheetStars(_ratingSheetRating);
+}
+
+async function ratingSheetSetRating(n) {
+  const r = _sortedRatingsCache[_ratingSheetIdx];
   if (!r) return;
-  await api('PATCH', '/api/library', {platform: r.platform, title: r.title, user_rating: 0});
+  _ratingSheetRating = n;
+  r.user_rating = n;
+  _renderRatingSheetStars(n);
+  await api('PATCH', '/api/library', { platform: r.platform, title: r.title, user_rating: n });
+  const ri = _ratingsData.find(x => x.platform === r.platform && x.title === r.title);
+  if (ri) ri.user_rating = n;
+}
+
+async function ratingSheetSetStatus(status) {
+  const r = _sortedRatingsCache[_ratingSheetIdx];
+  if (!r) return;
+  r.status = status;
+  const ri = _ratingsData.find(x => x.platform === r.platform && x.title === r.title);
+  if (ri) ri.status = status;
+  _updateRatingSheetStatusRow(status);
+  _updateRatingSheetSub(r);
+  await api('PATCH', '/api/library', { platform: r.platform, title: r.title, status });
+}
+
+async function ratingSheetDelete() {
+  const r = _sortedRatingsCache[_ratingSheetIdx];
+  if (!r) return;
+  closeRatingSheet();
+  await api('PATCH', '/api/library', { platform: r.platform, title: r.title, status: 'not-started', user_rating: 0 });
   _ratingsData = _ratingsData.filter(x => !(x.platform === r.platform && x.title === r.title));
   loadProfileRatings('rating', null);
 }

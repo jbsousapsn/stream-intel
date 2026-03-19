@@ -672,6 +672,9 @@ async function loadTmdbData(t) {
     });
   }
 
+  // ── More Like This ────────────────────────────────────────────────────────
+  _loadMoreLikeThis(t, det);
+
   // ── Seasons panel (TV only) ────────────────────────────────────────────────
   if (!isTV) return;
   const seasons = (det.seasons || []).filter(s => s.season_number > 0);
@@ -720,6 +723,55 @@ async function loadTmdbData(t) {
   // Show the mark-all toolbar now that we have real season data
   document.getElementById('seasonsToolbar').style.display = '';
   updateToggleAllBtn();
+}
+
+// ── More Like This ────────────────────────────────────────────────────────────
+async function _loadMoreLikeThis(t, det) {
+  const container = document.getElementById('mMoreLikeThis');
+  if (!container) return;
+  container.style.display = 'none';
+
+  const firstGenre = (det.genres || [])[0]?.name;
+  if (!firstGenre) return;
+
+  const ct = t.content_type || 'movie';
+  const qs = new URLSearchParams({genre: firstGenre, content_type: ct, per_page: '20', unique: 'true'});
+  const data = await api('GET', `/api/titles?${qs}`, null, {loader: false});
+  if (!data?.titles?.length) return;
+
+  const currentTitle = (t.title || '').toLowerCase();
+  const similar = data.titles.filter(s => s.title.toLowerCase() !== currentTitle).slice(0, 10);
+  if (!similar.length) return;
+
+  container.style.display = '';
+  container.innerHTML = `
+    <div class="section-label" style="margin-top:24px">More Like This</div>
+    <div class="mlt-scroll">
+      ${similar.map(s => {
+        const ck = cardKey(s);
+        return `<div class="mlt-card" onclick="closeModalDirect();setTimeout(()=>openModal('${jsEsc(ck)}'),200)">
+          <div class="mlt-poster" id="mlt-${CSS.escape(titleKey(s))}">
+            <div class="mlt-poster-ph">${s.content_type==='movie'?'🎬':'📺'}</div>
+          </div>
+          <div class="mlt-title">${escHtml(s.title)}</div>
+          <div class="mlt-year">${s.release_year || ''}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+
+  // Lazy-load posters for MLT cards
+  for (const s of similar) {
+    const tk = titleKey(s);
+    const el = document.getElementById(`mlt-${CSS.escape(tk)}`);
+    if (!el) continue;
+    fetchPosterUrl(s.title, s.release_year, s.content_type).then(imgs => {
+      if (!imgs?.poster) return;
+      const img = document.createElement('img');
+      img.src = imgs.poster; img.alt = s.title; img.loading = 'lazy';
+      img.onload = () => { const ph = el.querySelector('.mlt-poster-ph'); if (ph) ph.remove(); };
+      el.insertBefore(img, el.firstChild);
+    });
+  }
 }
 
 // Toggle a season open/closed, fetching episodes lazily
@@ -935,6 +987,133 @@ async function toggleAllWatched() {
   }
 }
 
+// ── Filmography filter state ──────────────────────────────────────────────────
+let _filmAllRawData  = [];   // full deduped credits for the currently-open actor
+let _filmAllPlatform = '';
+let _filmAllState    = { sort: 'date', type: 'all', library: false };
+let _filmAllSearch   = '';
+
+function _applyFilmFilters(films) {
+  let result = [...films];
+  if (_filmAllState.library) {
+    result = result.filter(c => {
+      const titleLower = (c.title || c.name || '').toLowerCase().trim();
+      return Object.keys(libraryMap).some(k => {
+        const ktitle = k.split('::').slice(1).join('::');
+        return ktitle === titleLower && libraryMap[k]?.status && libraryMap[k].status !== 'not-started';
+      });
+    });
+  }
+  if (_filmAllState.type !== 'all') {
+    result = result.filter(c => c.media_type === _filmAllState.type);
+  }
+  if (_filmAllSearch) {
+    const lq = _filmAllSearch.toLowerCase();
+    result = result.filter(c => (c.title || c.name || '').toLowerCase().includes(lq));
+  }
+  if (_filmAllState.sort === 'az') {
+    result.sort((a, b) => (a.title || a.name || '').localeCompare(b.title || b.name || ''));
+  } else if (_filmAllState.sort === 'imdb') {
+    result.sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
+  }
+  // 'date': already sorted newest-first as loaded
+  return result;
+}
+
+function _filmSetSort(sort, btn) {
+  _filmAllState.sort = sort;
+  document.querySelectorAll('#filmographyAllOverlay .film-sort-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  _reRenderFilmAll();
+}
+
+function _filmSetType(type, btn) {
+  _filmAllState.type = type;
+  document.querySelectorAll('#filmographyAllOverlay .film-type-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  _reRenderFilmAll();
+}
+
+function _filmSetLibrary(lib, btn) {
+  _filmAllState.library = lib;
+  document.querySelectorAll('#filmographyAllOverlay .film-lib-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  _reRenderFilmAll();
+}
+
+function _buildFilmRow(c, platform) {
+  const title     = c.title || c.name || '';
+  const isMovie   = c.media_type === 'movie';
+  const typeLabel = isMovie ? 'Movie' : 'TV';
+  const typeCls   = isMovie ? 'movie' : 'tv';
+  const character = c.character || '';
+  const startYear = (c.release_date || c.first_air_date || '').slice(0, 4);
+  const endYear   = (!isMovie && c.last_air_date) ? c.last_air_date.slice(0, 4) : '';
+  let yearDisplay = startYear;
+  if (!isMovie && startYear) {
+    yearDisplay = endYear && endYear !== startYear ? `${startYear}–${endYear}` : `${startYear}–`;
+  }
+  const epCount = (!isMovie && c.episode_count) ? c.episode_count : null;
+  const thumb = c.poster_path
+    ? `<img src="${TMDB_IMG}/w92${c.poster_path}" alt="${escAttr(title)}" loading="lazy">`
+    : `<div class="filmography-thumb-ph">${isMovie ? '🎬' : '📺'}</div>`;
+  const syntheticObj = JSON.stringify({
+    title, platform: platform || '', content_type: isMovie ? 'movie' : 'tv',
+    release_year: startYear, genre: '', synopsis: '',
+    imdb_score: 0, imdb_votes: 0, tomatometer: 0,
+    tmdb_score: c.vote_average || 0, maturity_rating: '', is_trending: false, ranking_position: 0,
+  }).replace(/'/g, '&#39;');
+  const scoresHtml = `
+    <div class="filmography-scores">
+      <div class="filmography-score-pair"><div class="filmography-score-lbl">IMDb</div><div class="filmography-score-loading"></div></div>
+      <div class="filmography-score-pair"><div class="filmography-score-lbl">RT</div><div class="filmography-score-loading"></div></div>
+      ${epCount ? `<div class="filmography-eps">${epCount} ep${epCount !== 1 ? 's' : ''}</div>` : ''}
+    </div>`;
+  return `
+    <div class="filmography-row" data-tmdb-id="${c.id}" data-media-type="${c.media_type}">
+      <div class="filmography-thumb" data-synthetic='${syntheticObj}'>${thumb}</div>
+      <div class="filmography-info">
+        <div class="filmography-title" data-synthetic='${syntheticObj}'>${escHtml(title)}</div>
+        <div class="filmography-sub">
+          ${yearDisplay ? `<span class="filmography-year">${yearDisplay}</span>` : ''}
+          <span class="filmography-type ${typeCls}">${typeLabel}</span>
+        </div>
+        ${character ? `<div class="filmography-character">as ${escHtml(character)}</div>` : ''}
+      </div>
+      ${scoresHtml}
+    </div>`;
+}
+
+function _reRenderFilmAll() {
+  const list = document.getElementById('filmAllList');
+  if (!list) return;
+  const filtered = _applyFilmFilters(_filmAllRawData);
+  const label = document.getElementById('filmAllLabel');
+  if (label) label.textContent = `Filmography (${filtered.length} titles)`;
+  list.innerHTML = filtered.map(c => _buildFilmRow(c, _filmAllPlatform)).join('');
+  // Wire title clicks → open modal on top
+  list.querySelectorAll('[data-synthetic]').forEach(el => {
+    el.addEventListener('click', () => {
+      const obj = JSON.parse(el.dataset.synthetic);
+      closeFilmographyAllOverlay();
+      document.getElementById('actorOverlay')?.classList.remove('open');
+      setTimeout(() => openModal(obj, true), 60);
+    });
+  });
+  // Lazy-load IMDb / RT ratings
+  const observer = new IntersectionObserver((entries, obs) => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      obs.unobserve(entry.target);
+      const row = entry.target;
+      if (row.dataset.tmdbId && row.dataset.mediaType) {
+        fetchFilmographyRatings(row.dataset.tmdbId, row.dataset.mediaType, row);
+      }
+    });
+  }, { rootMargin: '200px' });
+  list.querySelectorAll('.filmography-row[data-tmdb-id]').forEach(r => observer.observe(r));
+}
+
 // ── Actor sub-modal ───────────────────────────────────────────────────────────
 const actorCache = {};
 async function openActorModal(actorId, name, character) {
@@ -994,7 +1173,7 @@ async function openActorModal(actorId, name, character) {
   const credits = await tmdbGet(`/person/${actorId}/combined_credits`);
   const cast = (credits?.cast || []);
 
-  // Dedupe by id+media_type, sort newest first
+  // Dedupe by id+media_type, sort newest first, store all results
   const seen = new Set();
   const films = cast
     .filter(c => {
@@ -1007,8 +1186,13 @@ async function openActorModal(actorId, name, character) {
       const ya = parseInt((a.release_date || a.first_air_date || '0').slice(0,4)) || 0;
       const yb = parseInt((b.release_date || b.first_air_date || '0').slice(0,4)) || 0;
       return yb - ya;
-    })
-    .slice(0, 60);
+    });
+
+  // Store for the full-filmography overlay filter system
+  _filmAllRawData  = films;
+  _filmAllPlatform = currentModalTitle?.platform || '';
+  _filmAllState    = { sort: 'date', type: 'all', library: false };
+  _filmAllSearch   = '';
 
   if (films.length) {
     const filmEl = document.getElementById('actorFilmography');
@@ -1154,84 +1338,51 @@ function openFilmographyAllOverlay(actorName, films, platform) {
       </div>`;
     document.body.appendChild(ov);
   }
+
+  // Store data and reset state for this open
+  _filmAllRawData  = films;
+  _filmAllPlatform = platform || '';
+  _filmAllState    = { sort: 'date', type: 'all', library: false };
+  _filmAllSearch   = '';
+
   document.getElementById('filmAllCrumb').textContent = actorName + ' — Full Filmography';
   history.pushState({ modal: 'filmographyAll' }, '');
   ov.classList.add('open');
   ov.querySelector('.actor-scroll').scrollTop = 0;
-  // Clear search on open
+
+  // Reset search input
   const searchInput = ov.querySelector('.hs-input');
   if (searchInput) searchInput.value = '';
 
+  // Build filter controls + list container (regenerated on each open to reset active states)
   const filmContent = document.getElementById('filmAllContent');
   filmContent.innerHTML = `
-    <div class="filmography-label" style="margin-bottom:16px">Filmography (${films.length} titles)</div>
-    <div class="filmography-list" id="filmAllList">
-      ${films.map(c => {
-        const title      = c.title || c.name || '';
-        const isMovie    = c.media_type === 'movie';
-        const typeLabel  = isMovie ? 'Movie' : 'TV';
-        const typeCls    = isMovie ? 'movie' : 'tv';
-        const character  = c.character || '';
-        const startYear  = (c.release_date || c.first_air_date || '').slice(0, 4);
-        const endYear    = (!isMovie && c.last_air_date) ? c.last_air_date.slice(0, 4) : '';
-        let yearDisplay  = startYear;
-        if (!isMovie && startYear) {
-          yearDisplay = endYear && endYear !== startYear ? `${startYear}–${endYear}` : `${startYear}–`;
-        }
-        const epCount = (!isMovie && c.episode_count) ? c.episode_count : null;
-        const thumb = c.poster_path
-          ? `<img src="${TMDB_IMG}/w92${c.poster_path}" alt="${escAttr(title)}" loading="lazy">`
-          : `<div class="filmography-thumb-ph">${isMovie ? '🎬' : '📺'}</div>`;
-        const syntheticObj = JSON.stringify({
-          title, platform: platform || '', content_type: isMovie ? 'movie' : 'tv',
-          release_year: startYear, genre: '', synopsis: '',
-          imdb_score: 0, imdb_votes: 0, tomatometer: 0,
-          tmdb_score: c.vote_average || 0, maturity_rating: '', is_trending: false, ranking_position: 0,
-        }).replace(/'/g, '&#39;');
-        const scoresHtml = `
-          <div class="filmography-scores">
-            <div class="filmography-score-pair"><div class="filmography-score-lbl">IMDb</div><div class="filmography-score-loading"></div></div>
-            <div class="filmography-score-pair"><div class="filmography-score-lbl">RT</div><div class="filmography-score-loading"></div></div>
-            ${epCount ? `<div class="filmography-eps">${epCount} ep${epCount !== 1 ? 's' : ''}</div>` : ''}
-          </div>`;
-        return `
-          <div class="filmography-row" data-tmdb-id="${c.id}" data-media-type="${c.media_type}">
-            <div class="filmography-thumb" data-synthetic='${syntheticObj}'>${thumb}</div>
-            <div class="filmography-info">
-              <div class="filmography-title" data-synthetic='${syntheticObj}'>${escHtml(title)}</div>
-              <div class="filmography-sub">
-                ${yearDisplay ? `<span class="filmography-year">${yearDisplay}</span>` : ''}
-                <span class="filmography-type ${typeCls}">${typeLabel}</span>
-              </div>
-              ${character ? `<div class="filmography-character">as ${escHtml(character)}</div>` : ''}
-            </div>
-            ${scoresHtml}
-          </div>`;
-      }).join('')}
-    </div>`;
+    <div class="film-lib-toggle">
+      <button class="film-lib-btn active" onclick="_filmSetLibrary(false,this)">🎬 All Titles</button>
+      <button class="film-lib-btn" onclick="_filmSetLibrary(true,this)">✓ In My Library</button>
+    </div>
+    <div class="film-filter-bar">
+      <div class="film-filter-group">
+        <div class="film-filter-label">SORT</div>
+        <div class="film-filter-pills">
+          <button class="film-sort-btn film-filter-btn active" onclick="_filmSetSort('date',this)">Newest</button>
+          <button class="film-sort-btn film-filter-btn" onclick="_filmSetSort('imdb',this)">Top Rated</button>
+          <button class="film-sort-btn film-filter-btn" onclick="_filmSetSort('az',this)">A–Z</button>
+        </div>
+      </div>
+      <div class="film-filter-group">
+        <div class="film-filter-label">TYPE</div>
+        <div class="film-filter-pills">
+          <button class="film-type-btn film-filter-btn active" onclick="_filmSetType('all',this)">All</button>
+          <button class="film-type-btn film-filter-btn" onclick="_filmSetType('movie',this)">Movies</button>
+          <button class="film-type-btn film-filter-btn" onclick="_filmSetType('tv',this)">TV Shows</button>
+        </div>
+      </div>
+    </div>
+    <div class="filmography-label" id="filmAllLabel">Filmography (${films.length} titles)</div>
+    <div class="filmography-list" id="filmAllList"></div>`;
 
-  // Wire title clicks → open modal
-  filmContent.querySelectorAll('[data-synthetic]').forEach(el => {
-    el.addEventListener('click', () => {
-      const obj = JSON.parse(el.dataset.synthetic);
-      closeFilmographyAllOverlay();
-      document.getElementById('actorOverlay')?.classList.remove('open');
-      setTimeout(() => openModal(obj, true), 60);
-    });
-  });
-
-  // Lazy-load IMDb / RT ratings
-  const observer = new IntersectionObserver((entries, obs) => {
-    entries.forEach(entry => {
-      if (!entry.isIntersecting) return;
-      obs.unobserve(entry.target);
-      const row = entry.target;
-      if (row.dataset.tmdbId && row.dataset.mediaType) {
-        fetchFilmographyRatings(row.dataset.tmdbId, row.dataset.mediaType, row);
-      }
-    });
-  }, { rootMargin: '200px' });
-  filmContent.querySelectorAll('.filmography-row[data-tmdb-id]').forEach(r => observer.observe(r));
+  _reRenderFilmAll();
 }
 
 function closeFilmographyAllOverlay() {
@@ -1239,12 +1390,8 @@ function closeFilmographyAllOverlay() {
 }
 
 function _filterFilmographyList(q) {
-  const lq = q.trim().toLowerCase();
-  document.querySelectorAll('#filmAllList .filmography-row').forEach(row => {
-    const titleEl = row.querySelector('.filmography-title');
-    const text = (titleEl?.textContent || '').toLowerCase();
-    row.style.display = (!lq || text.includes(lq)) ? '' : 'none';
-  });
+  _filmAllSearch = q.trim();
+  _reRenderFilmAll();
 }
 function toggleBio(btn) {
   var bioEl = document.getElementById('actorBio');

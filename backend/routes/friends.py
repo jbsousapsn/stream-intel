@@ -676,7 +676,7 @@ def friend_library(uid):
     if not user or not user["library_public"]:
         return jsonify({"error": "Library is private"}), 403
     rows = db.execute(
-        """SELECT l.platform, l.title, l.is_fav, l.status,
+        """SELECT l.platform, l.title, l.is_fav, l.status, l.user_rating,
                   MAX(t.content_type) AS content_type,
                   MAX(t.release_year) AS release_year,
                   MAX(t.imdb_score) AS imdb_score,

@@ -124,6 +124,8 @@ def _compute_stats(db, uid: int) -> dict:
 
     tv_finished = sum(1 for s, _g, _f in tv_best.values() if s == "finished")
     tv_watching = sum(1 for s, _g, _f in tv_best.values() if s == "watching")
+    movies_watchlist = sum(1 for s, _, _g, _f in movie_best.values() if s == "watchlist")
+    tv_watchlist = sum(1 for s, _g, _f in tv_best.values() if s == "watchlist")
 
     season_rows = db.execute(
         "SELECT title, ep_mask, runtime_mins FROM watched_seasons WHERE user_id=?",
@@ -163,6 +165,9 @@ def _compute_stats(db, uid: int) -> dict:
         "movie_mins": movie_mins,
         "tv_mins": tv_mins,
         "top_genres": [{"genre": g, "count": c} for g, c in top_genres],
+        "watchlist_count": movies_watchlist + tv_watchlist,
+        "watching_count": movies_watching + tv_watching,
+        "finished_count": movies_finished + tv_finished,
     }
 
 
@@ -235,6 +240,9 @@ def get_profile():
         "tv_watch_time": _fmt_time(tv_mins),
         "total_watch_time": _fmt_time(movie_mins + tv_mins),
         "top_genres": s["top_genres"],
+        "watchlist_count": s["watchlist_count"],
+        "watching_count": s["watching_count"],
+        "finished_count": s["finished_count"],
     }
 
     return jsonify(
