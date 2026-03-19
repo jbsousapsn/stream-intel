@@ -126,7 +126,9 @@ def _compute_stats(db, uid: int) -> dict:
 
     tv_finished = sum(1 for s, _g, _f in tv_best.values() if s == "finished")
     tv_watching = sum(1 for s, _g, _f in tv_best.values() if s == "watching")
-    movies_watchlist = sum(1 for s, _, _g, _f in movie_best.values() if s == "watchlist")
+    movies_watchlist = sum(
+        1 for s, _, _g, _f in movie_best.values() if s == "watchlist"
+    )
     tv_watchlist = sum(1 for s, _g, _f in tv_best.values() if s == "watchlist")
 
     season_rows = db.execute(
@@ -507,8 +509,18 @@ def get_top_actors():
         if key not in seen:
             seen.add(key)
             raw_genre = r["genre"] or ""
-            genres = [g.strip() for g in raw_genre.split(",") if g.strip() and g.strip().lower() != "unknown"]
-            unique.append({"title": r["title"], "media_type": "movie" if ct == "movie" else "tv", "genres": genres})
+            genres = [
+                g.strip()
+                for g in raw_genre.split(",")
+                if g.strip() and g.strip().lower() != "unknown"
+            ]
+            unique.append(
+                {
+                    "title": r["title"],
+                    "media_type": "movie" if ct == "movie" else "tv",
+                    "genres": genres,
+                }
+            )
 
     # Step 1 – resolve TMDB IDs in parallel
     def _resolve(entry: dict):
@@ -516,7 +528,11 @@ def get_top_actors():
         data = _tmdb(f"/search/{mt}", query=entry["title"])
         results = data.get("results") or []
         if results:
-            return {"tmdb_id": results[0]["id"], "media_type": mt, "genres": entry["genres"]}
+            return {
+                "tmdb_id": results[0]["id"],
+                "media_type": mt,
+                "genres": entry["genres"],
+            }
         return None
 
     resolved: list = []
@@ -556,14 +572,19 @@ def get_top_actors():
                 if pid in actor_counts:
                     actor_counts[pid]["count"] += 1
                     actor_counts[pid]["genres"].update(entry_genres)
+                    for eg in entry_genres:
+                        actor_counts[pid]["genre_counts"][eg] = (
+                            actor_counts[pid]["genre_counts"].get(eg, 0) + 1
+                        )
                 else:
                     actor_counts[pid] = {
                         "name": actor.get("name", ""),
                         "profile_path": actor.get("profile_path"),
                         "count": 1,
                         "genres": set(entry_genres),
+                        "genre_counts": {eg: 1 for eg in entry_genres},
                     }
-            for crew in (credits.get("crew") or []):
+            for crew in credits.get("crew") or []:
                 if crew.get("job") != "Director":
                     continue
                 pid = crew.get("id")
@@ -572,24 +593,47 @@ def get_top_actors():
                 if pid in director_counts:
                     director_counts[pid]["count"] += 1
                     director_counts[pid]["genres"].update(entry_genres)
+                    for eg in entry_genres:
+                        director_counts[pid]["genre_counts"][eg] = (
+                            director_counts[pid]["genre_counts"].get(eg, 0) + 1
+                        )
                 else:
                     director_counts[pid] = {
                         "name": crew.get("name", ""),
                         "profile_path": crew.get("profile_path"),
                         "count": 1,
                         "genres": set(entry_genres),
+                        "genre_counts": {eg: 1 for eg in entry_genres},
                     }
 
     actors = sorted(
-        [{"person_id": pid, "name": d["name"], "profile_path": d["profile_path"], "title_count": d["count"], "genres": sorted(d["genres"])}
-         for pid, d in actor_counts.items()],
+        [
+            {
+                "person_id": pid,
+                "name": d["name"],
+                "profile_path": d["profile_path"],
+                "title_count": d["count"],
+                "genres": sorted(d["genres"]),
+                "genre_counts": d["genre_counts"],
+            }
+            for pid, d in actor_counts.items()
+        ],
         key=lambda x: x["title_count"],
         reverse=True,
     )
 
     directors = sorted(
-        [{"person_id": pid, "name": d["name"], "profile_path": d["profile_path"], "title_count": d["count"], "genres": sorted(d["genres"])}
-         for pid, d in director_counts.items()],
+        [
+            {
+                "person_id": pid,
+                "name": d["name"],
+                "profile_path": d["profile_path"],
+                "title_count": d["count"],
+                "genres": sorted(d["genres"]),
+                "genre_counts": d["genre_counts"],
+            }
+            for pid, d in director_counts.items()
+        ],
         key=lambda x: x["title_count"],
         reverse=True,
     )
