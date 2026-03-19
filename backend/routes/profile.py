@@ -483,10 +483,10 @@ def get_top_actors():
 
     # Fetch library entries that the user has actively engaged with
     lib_rows = db.execute(
-        """SELECT l.title, t.content_type
+        """SELECT l.title, t.content_type, t.genre
            FROM library l
            LEFT JOIN (
-               SELECT platform, title, content_type
+               SELECT platform, title, content_type, genre
                FROM titles GROUP BY platform, title
            ) t ON t.platform = l.platform AND t.title = l.title
            WHERE l.user_id = ?
@@ -506,7 +506,9 @@ def get_top_actors():
         key = (r["title"].strip().lower(), ct)
         if key not in seen:
             seen.add(key)
-            unique.append({"title": r["title"], "media_type": "movie" if ct == "movie" else "tv"})
+            raw_genre = r["genre"] or ""
+            genres = [g.strip() for g in raw_genre.split(",") if g.strip() and g.strip().lower() != "unknown"]
+            unique.append({"title": r["title"], "media_type": "movie" if ct == "movie" else "tv", "genres": genres})
 
     # Step 1 – resolve TMDB IDs in parallel
     def _resolve(entry: dict):
@@ -514,7 +516,7 @@ def get_top_actors():
         data = _tmdb(f"/search/{mt}", query=entry["title"])
         results = data.get("results") or []
         if results:
-            return {"tmdb_id": results[0]["id"], "media_type": mt}
+            return {"tmdb_id": results[0]["id"], "media_type": mt, "genres": entry["genres"]}
         return None
 
     resolved: list = []
@@ -539,8 +541,10 @@ def get_top_actors():
         return _tmdb(f"/{entry['media_type']}/{entry['tmdb_id']}/credits")
 
     with ThreadPoolExecutor(max_workers=20) as ex:
-        futs = [ex.submit(_credits, r) for r in resolved]
+        futs = {ex.submit(_credits, r): r for r in resolved}
         for fut in as_completed(futs):
+            entry = futs[fut]
+            entry_genres: list = entry.get("genres") or []
             try:
                 credits = fut.result()
             except Exception:
@@ -551,11 +555,13 @@ def get_top_actors():
                     continue
                 if pid in actor_counts:
                     actor_counts[pid]["count"] += 1
+                    actor_counts[pid]["genres"].update(entry_genres)
                 else:
                     actor_counts[pid] = {
                         "name": actor.get("name", ""),
                         "profile_path": actor.get("profile_path"),
                         "count": 1,
+                        "genres": set(entry_genres),
                     }
             for crew in (credits.get("crew") or []):
                 if crew.get("job") != "Director":
@@ -565,22 +571,24 @@ def get_top_actors():
                     continue
                 if pid in director_counts:
                     director_counts[pid]["count"] += 1
+                    director_counts[pid]["genres"].update(entry_genres)
                 else:
                     director_counts[pid] = {
                         "name": crew.get("name", ""),
                         "profile_path": crew.get("profile_path"),
                         "count": 1,
+                        "genres": set(entry_genres),
                     }
 
     actors = sorted(
-        [{"person_id": pid, "name": d["name"], "profile_path": d["profile_path"], "title_count": d["count"]}
+        [{"person_id": pid, "name": d["name"], "profile_path": d["profile_path"], "title_count": d["count"], "genres": sorted(d["genres"])}
          for pid, d in actor_counts.items()],
         key=lambda x: x["title_count"],
         reverse=True,
     )
 
     directors = sorted(
-        [{"person_id": pid, "name": d["name"], "profile_path": d["profile_path"], "title_count": d["count"]}
+        [{"person_id": pid, "name": d["name"], "profile_path": d["profile_path"], "title_count": d["count"], "genres": sorted(d["genres"])}
          for pid, d in director_counts.items()],
         key=lambda x: x["title_count"],
         reverse=True,
