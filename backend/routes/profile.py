@@ -554,7 +554,11 @@ def get_top_actors():
     director_counts: dict = {}
 
     def _credits(entry: dict):
-        return _tmdb(f"/{entry['media_type']}/{entry['tmdb_id']}/credits")
+        # TV shows: use aggregate_credits to get cast across ALL seasons,
+        # not just the latest season (which /credits returns for TV).
+        if entry["media_type"] == "tv":
+            return _tmdb(f"/tv/{entry['tmdb_id']}/aggregate_credits")
+        return _tmdb(f"/movie/{entry['tmdb_id']}/credits")
 
     with ThreadPoolExecutor(max_workers=20) as ex:
         futs = {ex.submit(_credits, r): r for r in resolved}
