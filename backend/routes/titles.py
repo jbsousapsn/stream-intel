@@ -113,6 +113,26 @@ def get_titles():
             genre_or = " OR ".join(["t.genre LIKE ?" for _ in genres])
             conditions.append(f"({genre_or})")
             params.extend([f"%{g}%" for g in genres])
+    if args.get("year_from"):
+        try:
+            year_from = int(args["year_from"])
+            conditions.append("(t.release_year IS NULL OR t.release_year >= ?)")
+            params.append(year_from)
+        except (ValueError, TypeError):
+            pass
+    if args.get("year_to"):
+        try:
+            year_to = int(args["year_to"])
+            conditions.append("(t.release_year IS NULL OR t.release_year <= ?)")
+            params.append(year_to)
+        except (ValueError, TypeError):
+            pass
+    if args.get("titles_in"):
+        title_names = [t.strip() for t in args["titles_in"].split("|") if t.strip()]
+        if title_names:
+            placeholders = ",".join(["?" for _ in title_names])
+            conditions.append(f"LOWER(t.title) IN ({placeholders})")
+            params.extend([n.lower() for n in title_names])
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
