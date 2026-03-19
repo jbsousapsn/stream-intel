@@ -472,36 +472,6 @@ def _tmdb(path: str, **params) -> dict:
         return {}
 
 
-# ── /api/tmdb/search — proxy to TMDB search ──────────────────────────────────
-
-@bp.route("/tmdb/search")
-@require_auth
-def tmdb_search():
-    """Proxy TMDB search for movies or TV shows.
-    Query params: query (str), type ('movie'|'tv')
-    """
-    query = request.args.get("query", "").strip()
-    media_type = request.args.get("type", "movie")
-    if media_type not in ("movie", "tv"):
-        media_type = "movie"
-    if not query:
-        return jsonify({"results": []})
-    data = _tmdb(f"/search/{media_type}", query=query)
-    return jsonify({"results": data.get("results", [])})
-
-
-# ── /api/tmdb/<type>/<id>/credits — proxy to TMDB credits ────────────────────
-
-@bp.route("/tmdb/<string:media_type>/<int:tmdb_id>/credits")
-@require_auth
-def tmdb_credits(media_type: str, tmdb_id: int):
-    """Proxy TMDB credits (cast) for a movie or TV show."""
-    if media_type not in ("movie", "tv"):
-        return jsonify({"cast": []}), 400
-    data = _tmdb(f"/{media_type}/{tmdb_id}/credits")
-    return jsonify({"cast": data.get("cast", [])})
-
-
 # ── /api/upcoming ─────────────────────────────────────────────────────────────
 
 ONGOING_STATUSES = {"Returning Series", "In Production", "Planned", "Pilot"}
