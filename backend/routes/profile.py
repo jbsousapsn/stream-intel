@@ -577,13 +577,13 @@ def get_top_actors():
          for pid, d in actor_counts.items()],
         key=lambda x: x["title_count"],
         reverse=True,
-    )[:15]
+    )
 
     directors = sorted(
         [{"person_id": pid, "name": d["name"], "profile_path": d["profile_path"], "title_count": d["count"]}
          for pid, d in director_counts.items()],
         key=lambda x: x["title_count"],
         reverse=True,
-    )[:10]
+    )
 
     return jsonify({"actors": actors, "directors": directors})
