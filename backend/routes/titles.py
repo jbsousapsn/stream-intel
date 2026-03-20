@@ -1009,6 +1009,44 @@ def tmdb_external_ids(media_type: str, tmdb_id: int):
     return jsonify(data)
 
 
+@bp.route("/debug/wikidata-awards/<imdb_id>")
+@require_auth
+def debug_wikidata_awards(imdb_id: str):
+    """Returns raw Wikidata SPARQL bindings for an IMDb ID — for debugging only."""
+    import re as _re2
+    if not _re2.match(r'^tt\d+$', imdb_id):
+        return jsonify({"error": "invalid imdb_id"}), 400
+    query = (
+        'SELECT ?awardLabel (SUM(?w) AS ?wins) (SUM(?n) AS ?noms) WHERE {'
+        f'  ?film wdt:P345 "{imdb_id}" .'
+        '  { ?film p:P166 ?ws . ?ws ps:P166 ?award . BIND(1 AS ?w) BIND(0 AS ?n) }'
+        '  UNION'
+        '  { ?film p:P1411 ?ns . ?ns ps:P1411 ?award . BIND(0 AS ?w) BIND(1 AS ?n) }'
+        '  SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }'
+        '} GROUP BY ?awardLabel ORDER BY DESC(?wins) DESC(?noms)'
+    )
+    try:
+        r = _tmdb_session.get(
+            "https://query.wikidata.org/sparql",
+            params={"query": query, "format": "json"},
+            headers={"User-Agent": "StreamIntel/1.0 (https://stream-intel.up.railway.app)"},
+            timeout=15,
+        )
+        bindings = r.json().get("results", {}).get("bindings", [])
+        rows = [
+            {
+                "label": b.get("awardLabel", {}).get("value", ""),
+                "wins": b.get("wins", {}).get("value", "0"),
+                "noms": b.get("noms", {}).get("value", "0"),
+            }
+            for b in bindings
+        ]
+        processed = _fetch_wikidata_awards(imdb_id)
+        return jsonify({"raw_rows": rows, "processed": processed, "status": r.status_code})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @bp.route("/tmdb/<media_type>/<int:tmdb_id>/ratings")
 @require_auth
 def tmdb_ratings(media_type: str, tmdb_id: int):
