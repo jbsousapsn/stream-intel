@@ -58,12 +58,11 @@ def geoip():
             )
             code = r.text.strip().upper()
             if len(code) == 2 and code.isalpha():
-                return jsonify({"country": code})
+                resp = make_response(jsonify({"country": code}))
+                resp.headers["Cache-Control"] = "private, max-age=3600"
+                return resp
         except Exception:
             pass
-    # For private/local IPs: do NOT fall back to Accept-Language — browser language
-    # is not the same as the user's country (an English browser in Portugal gives en-GB).
-    # Return empty so the frontend uses its localStorage preference or DB first-entry.
     return jsonify({"country": ""})
 
 
@@ -76,7 +75,9 @@ def get_regions():
     """Return all distinct region codes present in the titles table."""
     db = get_db()
     rows = db.execute("SELECT DISTINCT region FROM titles ORDER BY region").fetchall()
-    return jsonify({"regions": [r[0] for r in rows]})
+    resp = make_response(jsonify({"regions": [r[0] for r in rows]}))
+    resp.headers["Cache-Control"] = "private, max-age=3600"
+    return resp
 
 
 @bp.route("/titles")
@@ -762,7 +763,9 @@ def platform_logos():
                     cached[key] = url
         db.commit()
 
-    return jsonify(cached)
+    resp = make_response(jsonify(cached))
+    resp.headers["Cache-Control"] = "private, max-age=86400"
+    return resp
 
 
 @bp.route("/tmdb/search")
@@ -803,7 +806,7 @@ def tmdb_search():
 def tmdb_details(media_type: str, tmdb_id: int):
     if media_type not in ("movie", "tv"):
         return jsonify({"error": "invalid media_type"}), 400
-    data = _tmdb(f"/{media_type}/{tmdb_id}", append_to_response="external_ids")
+    data = _tmdb(f"/{media_type}/{tmdb_id}", append_to_response="external_ids,videos")
     return jsonify(data)
 
 

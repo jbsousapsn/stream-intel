@@ -226,11 +226,35 @@ def get_profile():
         (uid,),
     ).fetchone()
 
-    # ── Stats: always compute live from library to ensure accuracy ──────────
-    s = _compute_stats(db, uid)
-    cache_stats(db, uid)  # keep cache fresh for other consumers
-    movie_mins = s["movie_mins"]
-    tv_mins = s["tv_mins"]
+    # ── Stats: use cached row if fresh (< 5 min), else recompute ───────────
+    cached = db.execute(
+        "SELECT * FROM user_stats WHERE user_id=? AND updated_at > datetime('now', '-5 minutes')",
+        (uid,),
+    ).fetchone()
+    if cached:
+        movie_mins = cached["movie_mins"]
+        tv_mins = cached["tv_mins"]
+        # Derive watchlist/watching/finished from cached columns
+        watchlist_count = cached["movies_in_library"] - cached["movies_finished"] - cached["movies_watching"]
+        s = {
+            "total_in_library": cached["movies_in_library"] + cached["tv_finished"] + cached["tv_watching"] + cached["movies_finished"] + cached["movies_watching"],
+            "favourites": cached["favourites"],
+            "movies_finished": cached["movies_finished"],
+            "movies_watching": cached["movies_watching"],
+            "movies_in_library": cached["movies_in_library"],
+            "tv_finished": cached["tv_finished"],
+            "tv_watching": cached["tv_watching"],
+            "episodes_watched": cached["episodes_watched"],
+            "top_genres": json.loads(cached["top_genres"]) if cached["top_genres"] else [],
+            "watchlist_count": watchlist_count if watchlist_count > 0 else 0,
+            "watching_count": cached["movies_watching"] + cached["tv_watching"],
+            "finished_count": cached["movies_finished"] + cached["tv_finished"],
+        }
+    else:
+        s = _compute_stats(db, uid)
+        cache_stats(db, uid)
+        movie_mins = s["movie_mins"]
+        tv_mins = s["tv_mins"]
     stats = {
         "total_in_library": s["total_in_library"],
         "favourites": s["favourites"],
@@ -513,13 +537,15 @@ def get_top_actors():
         (uid,),
     ).fetchall()
     watched_seasons_map: dict = {}
-    watchtime_map: dict = {}       # title_key → total watched runtime_mins (used for movies)
+    watchtime_map: dict = {}  # title_key → total watched runtime_mins (used for movies)
     watched_ep_count_map: dict = {}  # title_key → total watched episode count (caps TV actor watchtime)
     for ws in ws_rows:
         key = ws["title"].strip().lower()
         watched_seasons_map.setdefault(key, set()).add(ws["season_num"])
         watchtime_map[key] = watchtime_map.get(key, 0) + (ws["runtime_mins"] or 0)
-        watched_ep_count_map[key] = watched_ep_count_map.get(key, 0) + bin(ws["ep_mask"]).count("1")
+        watched_ep_count_map[key] = watched_ep_count_map.get(key, 0) + bin(
+            ws["ep_mask"]
+        ).count("1")
 
     # Deduplicate by (normalised title, content_type)
     seen: set = set()
@@ -631,7 +657,7 @@ def get_top_actors():
             # None → finished show (use actor's full episode count)
             watched_eps = credits.get("_watched_eps")
 
-            for actor in (credits.get("cast") or []):
+            for actor in credits.get("cast") or []:
                 pid = actor.get("id")
                 if not pid:
                     continue
@@ -640,7 +666,9 @@ def get_top_actors():
                 else:
                     # aggregate_credits: total_episode_count = episodes actor appeared in
                     ep_count: int = actor.get("total_episode_count") or 0
-                    effective_eps = ep_count if watched_eps is None else min(ep_count, watched_eps)
+                    effective_eps = (
+                        ep_count if watched_eps is None else min(ep_count, watched_eps)
+                    )
                     actor_watchtime = effective_eps * avg_ep_runtime
                 if pid in actor_counts:
                     actor_counts[pid]["count"] += 1
@@ -660,7 +688,7 @@ def get_top_actors():
                         "genre_counts": {eg: 1 for eg in entry_genres},
                     }
 
-            for crew_m in (credits.get("crew") or []):
+            for crew_m in credits.get("crew") or []:
                 pid = crew_m.get("id")
                 if not pid:
                     continue
@@ -677,7 +705,9 @@ def get_top_actors():
                     )
                     if dir_eps == 0:
                         continue
-                    effective_eps = dir_eps if watched_eps is None else min(dir_eps, watched_eps)
+                    effective_eps = (
+                        dir_eps if watched_eps is None else min(dir_eps, watched_eps)
+                    )
                     crew_watchtime = effective_eps * avg_ep_runtime
                 if pid in director_counts:
                     director_counts[pid]["count"] += 1

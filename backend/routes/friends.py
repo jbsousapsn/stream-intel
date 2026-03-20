@@ -699,6 +699,18 @@ def _push_body_for(ntype: str, actor_name: str, payload: dict) -> str:
     """Build a short human-readable push notification body."""
     name = actor_name or "Someone"
     title = payload.get("title", "")
+    share_kind = payload.get("share_kind") or "title"
+    season_number = payload.get("season_number")
+    episode_number = payload.get("episode_number")
+    episode_title = payload.get("episode_title") or ""
+    episode_ref = ""
+    if share_kind == "episode":
+        ref_parts = []
+        if season_number is not None and episode_number is not None:
+            ref_parts.append(f"S{season_number}E{episode_number}")
+        if episode_title:
+            ref_parts.append(str(episode_title))
+        episode_ref = " - ".join(ref_parts)
     if ntype == "friend_request":
         return f"{name} sent you a friend request."
     if ntype == "friend_accepted":
@@ -706,10 +718,16 @@ def _push_body_for(ntype: str, actor_name: str, payload: dict) -> str:
     if ntype == "title_message":
         msg = payload.get("message", "")
         snippet = (msg[:60] + "\u2026") if len(msg) > 60 else msg
+        if share_kind == "episode" and title:
+            episode_label = title if not episode_ref else f"{title} ({episode_ref})"
+            return f"{name} about \u201c{episode_label}\u201d: \u201c{snippet}\u201d"
         if title:
             return f"{name} about \u201c{title}\u201d: \u201c{snippet}\u201d"
         return f"{name}: \u201c{snippet}\u201d"
     if ntype == "shared_action":
+        if share_kind == "episode" and title:
+            episode_label = title if not episode_ref else f"{title} ({episode_ref})"
+            return f"{name} shared \u201c{episode_label}\u201d with you."
         status = payload.get("status")
         is_fav = payload.get("is_fav")
         status_map = {
@@ -743,6 +761,9 @@ def _create_notification(db, user_id, actor_id, ntype, payload):
             """SELECT id FROM notifications
                WHERE user_id=? AND actor_id=? AND type='shared_action'
                AND json_extract(payload,'$.title')=?
+               AND json_extract(payload,'$.share_kind') IS ?
+               AND json_extract(payload,'$.season_number') IS ?
+               AND json_extract(payload,'$.episode_number') IS ?
                AND json_extract(payload,'$.status') IS ?
                AND json_extract(payload,'$.is_fav')  IS ?
                AND created_at >= datetime('now','-5 minutes')""",
@@ -750,6 +771,9 @@ def _create_notification(db, user_id, actor_id, ntype, payload):
                 user_id,
                 actor_id,
                 payload.get("title", ""),
+                payload.get("share_kind"),
+                payload.get("season_number"),
+                payload.get("episode_number"),
                 payload.get("status"),
                 payload.get("is_fav"),
             ),

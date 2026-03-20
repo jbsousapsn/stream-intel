@@ -70,6 +70,7 @@ CREATE INDEX IF NOT EXISTS idx_titles_filter   ON titles(platform, region, conte
 CREATE INDEX IF NOT EXISTS idx_titles_rank        ON titles(ranking_position, imdb_score DESC);
 CREATE INDEX IF NOT EXISTS idx_titles_pt          ON titles(platform, title);
 CREATE INDEX IF NOT EXISTS idx_titles_rank_region ON titles(platform, title, ranking_position, region);
+CREATE INDEX IF NOT EXISTS idx_titles_year ON titles(release_year);
 
 CREATE TABLE IF NOT EXISTS library (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,6 +102,7 @@ CREATE TABLE IF NOT EXISTS watched_seasons (
 
 CREATE INDEX IF NOT EXISTS idx_ws_user ON watched_seasons(user_id);
 CREATE INDEX IF NOT EXISTS idx_ws_show ON watched_seasons(user_id, platform, title);
+CREATE INDEX IF NOT EXISTS idx_ws_full ON watched_seasons(user_id, platform, title, season_num);
 
 CREATE TABLE IF NOT EXISTS poster_cache (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
