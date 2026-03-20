@@ -1019,12 +1019,12 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
 
     import json as _json
 
-    # Cache hit — skip if awards_detail is empty (legacy row missing new parsing)
+    # Cache hit — only serve from cache if Wikidata awards have already been fetched
     row = db.execute(
-        "SELECT imdb_id, imdb_score, imdb_votes, tomatometer, awards, awards_detail FROM tmdb_ratings WHERE tmdb_id = ?",
+        "SELECT imdb_id, imdb_score, imdb_votes, tomatometer, awards, awards_detail, wikidata_fetched FROM tmdb_ratings WHERE tmdb_id = ?",
         (tmdb_id,),
     ).fetchone()
-    if row and (row["awards_detail"] or "").strip():
+    if row and row["wikidata_fetched"]:
         det = row["awards_detail"] or ""
         try:
             parsed_detail = _json.loads(det) if det else []
@@ -1163,8 +1163,8 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
 
     db.execute(
         """INSERT OR REPLACE INTO tmdb_ratings
-               (tmdb_id, imdb_id, imdb_score, imdb_votes, tomatometer, awards, awards_detail, fetched_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+               (tmdb_id, imdb_id, imdb_score, imdb_votes, tomatometer, awards, awards_detail, wikidata_fetched, fetched_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))""",
         (
             tmdb_id,
             imdb_id,

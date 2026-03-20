@@ -194,6 +194,7 @@ CREATE TABLE IF NOT EXISTS tmdb_ratings (
     tomatometer INTEGER,
     awards      TEXT    DEFAULT '',
     awards_detail TEXT  DEFAULT '',
+    wikidata_fetched INTEGER DEFAULT 0,
     fetched_at  TEXT    DEFAULT (datetime('now'))
 );
 
@@ -546,6 +547,7 @@ def _apply_migrations(conn: sqlite3.Connection):
                 tomatometer INTEGER,
                 awards      TEXT    DEFAULT '',
                 awards_detail TEXT  DEFAULT '',
+                wikidata_fetched INTEGER DEFAULT 0,
                 fetched_at  TEXT    DEFAULT (datetime('now'))
             )
         """)
@@ -606,6 +608,11 @@ def _apply_migrations(conn: sqlite3.Connection):
         print("[DB] Adding awards_detail column to tmdb_ratings")
         conn.execute(
             "ALTER TABLE tmdb_ratings ADD COLUMN awards_detail TEXT DEFAULT ''"
+        )
+    if "wikidata_fetched" not in tr_cols:
+        print("[DB] Adding wikidata_fetched column to tmdb_ratings")
+        conn.execute(
+            "ALTER TABLE tmdb_ratings ADD COLUMN wikidata_fetched INTEGER DEFAULT 0"
         )
 
     if "idx_titles_pt" not in idx_names:
