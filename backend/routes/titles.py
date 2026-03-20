@@ -493,28 +493,51 @@ def _tmdb(path: str, **params) -> dict:
         return {}
 
 
+# Prefix-based grouping rules: first match wins.
+# Longer/more-specific prefixes must come before shorter ones.
+_AWARD_PREFIX_MAP = [
+    ("Academy Award",              "Academy Awards"),
+    ("BAFTA Award",                "BAFTA Awards"),
+    ("BAFTA",                      "BAFTA Awards"),
+    ("Golden Globe Award",         "Golden Globe Awards"),
+    ("Primetime Emmy Award",       "Primetime Emmy Awards"),
+    ("Daytime Emmy Award",         "Daytime Emmy Awards"),
+    ("Emmy Award",                 "Emmy Awards"),
+    ("Screen Actors Guild Award",  "Screen Actors Guild Awards"),
+    ("Grammy Award",               "Grammy Awards"),
+    ("Saturn Award",               "Saturn Awards"),
+    ("Critics' Choice Movie Award","Critics' Choice Awards"),
+    ("Critics' Choice Award",      "Critics' Choice Awards"),
+    ("Directors Guild of America Award", "Directors Guild of America Awards"),
+    ("Writers Guild of America Award",   "Writers Guild of America Awards"),
+    ("Producers Guild of America Award", "Producers Guild of America Awards"),
+    ("MTV Movie Award",            "MTV Movie Awards"),
+    ("Annie Award",                "Annie Awards"),
+    ("César Award",                "César Awards"),
+    ("Independent Spirit Award",   "Film Independent Spirit Awards"),
+    ("Palm d'Or",                  "Cannes Film Festival"),
+]
+
+
 def _fetch_wikidata_awards(imdb_id: str) -> list:
-    """Query Wikidata SPARQL for a named award-body breakdown keyed by IMDb ID.
-    Uses P179 (part of series) to group individual awards under their series name.
+    """Query Wikidata SPARQL for a named award breakdown keyed by IMDb ID.
+    Groups individual award items (e.g. 'Academy Award for Best Actor') under
+    their canonical body ('Academy Awards') via prefix matching.
+    Unrecognised awards are kept as individual rows.
     Returns [{name, wins, nominations}, ...] sorted by wins desc, or [] on failure.
     """
     import re as _re2
 
     if not imdb_id or not _re2.match(r"^tt\d+$", imdb_id):
         return []
-    # Group by award series (P179) — e.g. all "Academy Award for Best X" items
-    # roll up under the "Academy Awards" series. Falls back to the award item
-    # itself when no series is set (e.g. "National Board of Review: Top Ten Films").
     query = (
-        "SELECT ?group ?groupLabel (SUM(?w) AS ?wins) (SUM(?n) AS ?noms) WHERE {"
+        "SELECT ?awardLabel (SUM(?w) AS ?wins) (SUM(?n) AS ?noms) WHERE {"
         f'  ?film wdt:P345 "{imdb_id}" .'
-        "  { ?film p:P166 ?stmt . ?stmt ps:P166 ?award . BIND(1 AS ?w) BIND(0 AS ?n) }"
+        "  { ?film p:P166 ?ws . ?ws ps:P166 ?award . BIND(1 AS ?w) BIND(0 AS ?n) }"
         "  UNION"
-        "  { ?film p:P1411 ?stmt . ?stmt ps:P1411 ?award . BIND(0 AS ?w) BIND(1 AS ?n) }"
-        "  OPTIONAL { ?award wdt:P179 ?series }"
-        "  BIND(COALESCE(?series, ?award) AS ?group)"
+        "  { ?film p:P1411 ?ns . ?ns ps:P1411 ?award . BIND(0 AS ?w) BIND(1 AS ?n) }"
         '  SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }'
-        "} GROUP BY ?group ?groupLabel ORDER BY DESC(?wins) DESC(?noms)"
+        "} GROUP BY ?awardLabel ORDER BY DESC(?wins) DESC(?noms)"
     )
     try:
         r = _tmdb_session.get(
@@ -528,19 +551,28 @@ def _fetch_wikidata_awards(imdb_id: str) -> list:
         if r.status_code != 200:
             return []
         bindings = r.json().get("results", {}).get("bindings", [])
-        result = []
+        by_group: dict = {}
         for row in bindings:
-            label = row.get("groupLabel", {}).get("value", "")
-            wins = int(row.get("wins", {}).get("value", 0))
-            noms = int(row.get("noms", {}).get("value", 0))
-            # Skip rows where Wikidata returned a raw QID instead of a label
+            label = row.get("awardLabel", {}).get("value", "")
+            wins  = int(row.get("wins", {}).get("value", 0))
+            noms  = int(row.get("noms", {}).get("value", 0))
             if not label or _re2.match(r"^Q\d+$", label):
                 continue
-            # Normalise: "Academy Award" (singular series label) → "Academy Awards"
-            if label.endswith(" Award") and not label.endswith(" Awards"):
-                label = label + "s"
-            result.append({"name": label, "wins": wins, "nominations": noms})
-        return result
+            # Find canonical group name by prefix
+            group = None
+            for prefix, canonical in _AWARD_PREFIX_MAP:
+                if label.startswith(prefix):
+                    group = canonical
+                    break
+            # No prefix matched — use the label itself as its own group
+            if group is None:
+                group = label
+            by_group.setdefault(group, {"name": group, "wins": 0, "nominations": 0})
+            by_group[group]["wins"]        += wins
+            by_group[group]["nominations"] += noms
+        return sorted(
+            by_group.values(), key=lambda x: (-x["wins"], -x["nominations"], x["name"])
+        )
     except Exception:
         return []
 
@@ -988,15 +1020,13 @@ def debug_wikidata_awards(imdb_id: str):
     if not _re2.match(r"^tt\d+$", imdb_id):
         return jsonify({"error": "invalid imdb_id"}), 400
     query = (
-        "SELECT ?group ?groupLabel (SUM(?w) AS ?wins) (SUM(?n) AS ?noms) WHERE {"
+        "SELECT ?awardLabel (SUM(?w) AS ?wins) (SUM(?n) AS ?noms) WHERE {"
         f'  ?film wdt:P345 "{imdb_id}" .'
-        "  { ?film p:P166 ?stmt . ?stmt ps:P166 ?award . BIND(1 AS ?w) BIND(0 AS ?n) }"
+        "  { ?film p:P166 ?ws . ?ws ps:P166 ?award . BIND(1 AS ?w) BIND(0 AS ?n) }"
         "  UNION"
-        "  { ?film p:P1411 ?stmt . ?stmt ps:P1411 ?award . BIND(0 AS ?w) BIND(1 AS ?n) }"
-        "  OPTIONAL { ?award wdt:P179 ?series }"
-        "  BIND(COALESCE(?series, ?award) AS ?group)"
+        "  { ?film p:P1411 ?ns . ?ns ps:P1411 ?award . BIND(0 AS ?w) BIND(1 AS ?n) }"
         '  SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }'
-        "} GROUP BY ?group ?groupLabel ORDER BY DESC(?wins) DESC(?noms)"
+        "} GROUP BY ?awardLabel ORDER BY DESC(?wins) DESC(?noms)"
     )
     try:
         r = _tmdb_session.get(
@@ -1010,7 +1040,7 @@ def debug_wikidata_awards(imdb_id: str):
         bindings = r.json().get("results", {}).get("bindings", [])
         rows = [
             {
-                "label": b.get("groupLabel", {}).get("value", ""),
+                "label": b.get("awardLabel", {}).get("value", ""),
                 "wins": b.get("wins", {}).get("value", "0"),
                 "noms": b.get("noms", {}).get("value", "0"),
             }
