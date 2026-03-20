@@ -927,21 +927,6 @@ def tmdb_external_ids(media_type: str, tmdb_id: int):
     return jsonify(data)
 
 
-@bp.route("/debug/tmdb-awards/<int:tmdb_id>")
-@require_auth
-def debug_tmdb_awards(tmdb_id: int):
-    """Returns raw TMDB /movie/{id}/awards response for debugging."""
-    try:
-        r = _tmdb_session.get(
-            f"{TMDB_BASE}/movie/{tmdb_id}/awards",
-            params={"api_key": TMDB_KEY},
-            timeout=8,
-        )
-        return jsonify({"status": r.status_code, "body": r.json()})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
 @bp.route("/tmdb/<media_type>/<int:tmdb_id>/ratings")
 @require_auth
 def tmdb_ratings(media_type: str, tmdb_id: int):
@@ -952,12 +937,12 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
 
     import json as _json
 
-    # Cache hit — skip if movie is missing awards_detail (legacy row, needs re-fetch)
+    # Cache hit — skip if awards_detail is empty (legacy row missing new parsing)
     row = db.execute(
         "SELECT imdb_id, imdb_score, imdb_votes, tomatometer, awards, awards_detail FROM tmdb_ratings WHERE tmdb_id = ?",
         (tmdb_id,),
     ).fetchone()
-    if row and not (media_type == "movie" and not (row["awards_detail"] or "").strip()):
+    if row and (row["awards_detail"] or "").strip():
         det = row["awards_detail"] or ""
         try:
             parsed_detail = _json.loads(det) if det else []
@@ -1033,47 +1018,59 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
     if awards == "N/A":
         awards = ""
 
-    # Structured award detail — TMDB /movie/{id}/awards for movies
+    # Structured award detail — parse named award bodies from the OMDB awards string.
+    # TMDB v3 has no /awards endpoint; OMDB mentions top awards by name in the string.
     awards_detail_json = ""
-    if media_type == "movie":
-        try:
-            # Call without language param — awards are language-independent
-            tmdb_araw = _tmdb_session.get(
-                f"{TMDB_BASE}/movie/{tmdb_id}/awards",
-                params={"api_key": TMDB_KEY},
-                timeout=8,
-            )
-            print(f"[awards] tmdb_id={tmdb_id} status={tmdb_araw.status_code}", flush=True)
-            tmdb_awards_resp = tmdb_araw.json() if tmdb_araw.status_code == 200 else {}
-            print(f"[awards] keys={list(tmdb_awards_resp.keys())} results_len={len(tmdb_awards_resp.get('results', []))}", flush=True)
-            by_name: dict = {}
-            for country in tmdb_awards_resp.get("results", []):
-                data = country.get("data", {})
-                # wins array: each item has "name" = award body name
-                for win in data.get("wins", []):
-                    name = (win.get("name") or "").strip()
-                    if name:
-                        by_name.setdefault(
-                            name, {"name": name, "wins": 0, "nominations": 0}
-                        )
-                        by_name[name]["wins"] += 1
-                # nominations array: same structure
-                for nom in data.get("nominations", []):
-                    name = (nom.get("name") or "").strip()
-                    if name:
-                        by_name.setdefault(
-                            name, {"name": name, "wins": 0, "nominations": 0}
-                        )
-                        by_name[name]["nominations"] += 1
-            print(f"[awards] by_name count={len(by_name)}", flush=True)
-            if by_name:
-                sorted_detail = sorted(
-                    by_name.values(),
-                    key=lambda x: (-x["wins"], -x["nominations"], x["name"]),
-                )
-                awards_detail_json = _json.dumps(sorted_detail)
-        except Exception as _ae:
-            print(f"[awards] exception: {_ae}", flush=True)
+    if awards:
+        import re as _re
+        # Patterns: each is (regex, canonical_name, kind)
+        # kind = 'win' or 'nom'
+        _award_patterns = [
+            (_re.compile(r"[Ww]on (\d+) Oscar",         _re.I), "Academy Awards",        "win"),
+            (_re.compile(r"[Nn]ominated for (\d+) Oscar",_re.I), "Academy Awards",        "nom"),
+            (_re.compile(r"[Ww]on (\d+) Golden Globe",   _re.I), "Golden Globe Awards",   "win"),
+            (_re.compile(r"Nominated for (\d+) Golden Globe", _re.I), "Golden Globe Awards", "nom"),
+            (_re.compile(r"[Ww]on (\d+) BAFTA",         _re.I), "BAFTA Film Awards",     "win"),
+            (_re.compile(r"Nominated for (\d+) BAFTA",   _re.I), "BAFTA Film Awards",     "nom"),
+            (_re.compile(r"[Ww]on (\d+) Emmy",           _re.I), "Primetime Emmy Awards", "win"),
+            (_re.compile(r"Nominated for (\d+) Emmy",    _re.I), "Primetime Emmy Awards", "nom"),
+            (_re.compile(r"[Ww]on (\d+) Grammy",         _re.I), "Grammy Awards",         "win"),
+            (_re.compile(r"Nominated for (\d+) Grammy",  _re.I), "Grammy Awards",         "nom"),
+            (_re.compile(r"[Ww]on (\d+) Screen Actors Guild", _re.I), "Screen Actors Guild Awards", "win"),
+            (_re.compile(r"Nominated for (\d+) Screen Actors Guild", _re.I), "Screen Actors Guild Awards", "nom"),
+            (_re.compile(r"[Ww]on (\d+) Critics.{0,10}Choice", _re.I), "Critics' Choice Awards", "win"),
+            (_re.compile(r"Nominated for (\d+) Critics.{0,10}Choice", _re.I), "Critics' Choice Awards", "nom"),
+            (_re.compile(r"[Ww]on (\d+) Directors Guild", _re.I), "Directors Guild of America", "win"),
+            (_re.compile(r"Nominated for (\d+) Directors Guild", _re.I), "Directors Guild of America", "nom"),
+            (_re.compile(r"[Ww]on (\d+) Writers Guild", _re.I), "Writers Guild of America", "win"),
+            (_re.compile(r"Nominated for (\d+) Writers Guild", _re.I), "Writers Guild of America", "nom"),
+        ]
+        named: dict = {}
+        named_wins = 0
+        named_noms = 0
+        for pat, canon, kind in _award_patterns:
+            m = pat.search(awards)
+            if m:
+                count = int(m.group(1))
+                named.setdefault(canon, {"name": canon, "wins": 0, "nominations": 0})
+                if kind == "win":
+                    named[canon]["wins"] += count
+                    named_wins += count
+                else:
+                    named[canon]["nominations"] += count
+                    named_noms += count
+        # Total wins/noms from OMDB summary line
+        tw_m = _re.search(r"(\d+)\s+win", awards, _re.I)
+        tn_m = _re.search(r"(\d+)\s+nomination", awards, _re.I)
+        total_wins = int(tw_m.group(1)) if tw_m else 0
+        total_noms = int(tn_m.group(1)) if tn_m else 0
+        other_wins = max(0, total_wins - named_wins)
+        other_noms = max(0, total_noms - named_noms)
+        detail_list = sorted(named.values(), key=lambda x: (-x["wins"], -x["nominations"], x["name"]))
+        if other_wins > 0 or other_noms > 0:
+            detail_list.append({"name": "Other Awards", "wins": other_wins, "nominations": other_noms})
+        if detail_list:
+            awards_detail_json = _json.dumps(detail_list)
 
     db.execute(
         """INSERT OR REPLACE INTO tmdb_ratings
