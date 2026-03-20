@@ -193,6 +193,7 @@ CREATE TABLE IF NOT EXISTS tmdb_ratings (
     imdb_votes  INTEGER DEFAULT 0,
     tomatometer INTEGER,
     awards      TEXT    DEFAULT '',
+    awards_detail TEXT  DEFAULT '',
     fetched_at  TEXT    DEFAULT (datetime('now'))
 );
 
@@ -544,6 +545,7 @@ def _apply_migrations(conn: sqlite3.Connection):
                 imdb_votes  INTEGER DEFAULT 0,
                 tomatometer INTEGER,
                 awards      TEXT    DEFAULT '',
+                awards_detail TEXT  DEFAULT '',
                 fetched_at  TEXT    DEFAULT (datetime('now'))
             )
         """)
@@ -600,6 +602,11 @@ def _apply_migrations(conn: sqlite3.Connection):
     if "awards" not in tr_cols:
         print("[DB] Adding awards column to tmdb_ratings")
         conn.execute("ALTER TABLE tmdb_ratings ADD COLUMN awards TEXT DEFAULT ''")
+    if "awards_detail" not in tr_cols:
+        print("[DB] Adding awards_detail column to tmdb_ratings")
+        conn.execute(
+            "ALTER TABLE tmdb_ratings ADD COLUMN awards_detail TEXT DEFAULT ''"
+        )
 
     if "idx_titles_pt" not in idx_names:
         print("[DB] Adding compound index: idx_titles_pt")

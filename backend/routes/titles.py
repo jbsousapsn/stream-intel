@@ -937,10 +937,17 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
 
     # Cache hit
     row = db.execute(
-        "SELECT imdb_id, imdb_score, imdb_votes, tomatometer, awards FROM tmdb_ratings WHERE tmdb_id = ?",
+        "SELECT imdb_id, imdb_score, imdb_votes, tomatometer, awards, awards_detail FROM tmdb_ratings WHERE tmdb_id = ?",
         (tmdb_id,),
     ).fetchone()
     if row:
+        import json as _json
+
+        det = row["awards_detail"] or ""
+        try:
+            parsed_detail = _json.loads(det) if det else []
+        except Exception:
+            parsed_detail = []
         return jsonify(
             {
                 "imdb_id": row["imdb_id"] or "",
@@ -948,6 +955,7 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
                 "imdb_votes": row["imdb_votes"],
                 "tomatometer": row["tomatometer"],
                 "awards": row["awards"] or "",
+                "awards_detail": parsed_detail,
             }
         )
 
@@ -1010,13 +1018,61 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
     if awards == "N/A":
         awards = ""
 
+    # Structured award detail — TMDB /movie/{id}/awards for movies
+    import json as _json
+
+    awards_detail_json = ""
+    if media_type == "movie":
+        try:
+            tmdb_awards_resp = _tmdb(f"/movie/{tmdb_id}/awards")
+            by_name: dict = {}
+            for country in tmdb_awards_resp.get("results", []):
+                data = country.get("data", {})
+                for win in data.get("wins", []):
+                    name = (win.get("name") or "").strip()
+                    if name:
+                        by_name.setdefault(
+                            name, {"name": name, "wins": 0, "nominations": 0}
+                        )
+                        by_name[name]["wins"] += 1
+                for nom in data.get("nominations", []):
+                    name = (nom.get("name") or "").strip()
+                    if name:
+                        by_name.setdefault(
+                            name, {"name": name, "wins": 0, "nominations": 0}
+                        )
+                        by_name[name]["nominations"] += 1
+            if by_name:
+                sorted_detail = sorted(
+                    by_name.values(),
+                    key=lambda x: (-x["wins"], -x["nominations"], x["name"]),
+                )
+                awards_detail_json = _json.dumps(sorted_detail)
+        except Exception:
+            pass
+
     db.execute(
         """INSERT OR REPLACE INTO tmdb_ratings
-               (tmdb_id, imdb_id, imdb_score, imdb_votes, tomatometer, awards, fetched_at)
-           VALUES (?, ?, ?, ?, ?, ?, datetime('now'))""",
-        (tmdb_id, imdb_id, imdb_score, imdb_votes, tomatometer, awards),
+               (tmdb_id, imdb_id, imdb_score, imdb_votes, tomatometer, awards, awards_detail, fetched_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+        (
+            tmdb_id,
+            imdb_id,
+            imdb_score,
+            imdb_votes,
+            tomatometer,
+            awards,
+            awards_detail_json,
+        ),
     )
     db.commit()
+
+    try:
+        awards_detail_list = (
+            _json.loads(awards_detail_json) if awards_detail_json else []
+        )
+    except Exception:
+        awards_detail_list = []
 
     return jsonify(
         {
@@ -1025,5 +1081,6 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
             "imdb_votes": imdb_votes,
             "tomatometer": tomatometer,
             "awards": awards,
+            "awards_detail": awards_detail_list,
         }
     )
