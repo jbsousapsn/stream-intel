@@ -937,7 +937,7 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
 
     # Cache hit
     row = db.execute(
-        "SELECT imdb_score, imdb_votes, tomatometer FROM tmdb_ratings WHERE tmdb_id = ?",
+        "SELECT imdb_score, imdb_votes, tomatometer, awards FROM tmdb_ratings WHERE tmdb_id = ?",
         (tmdb_id,),
     ).fetchone()
     if row:
@@ -946,6 +946,7 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
                 "imdb_score": row["imdb_score"],
                 "imdb_votes": row["imdb_votes"],
                 "tomatometer": row["tomatometer"],
+                "awards": row["awards"] or "",
             }
         )
 
@@ -1003,11 +1004,16 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
                     pass
                 break
 
+    # Awards string (e.g. "Won 5 Oscars. 61 wins & 105 nominations total")
+    awards = omdb_resp.get("Awards", "") or ""
+    if awards == "N/A":
+        awards = ""
+
     db.execute(
         """INSERT OR REPLACE INTO tmdb_ratings
-               (tmdb_id, imdb_id, imdb_score, imdb_votes, tomatometer, fetched_at)
-           VALUES (?, ?, ?, ?, ?, datetime('now'))""",
-        (tmdb_id, imdb_id, imdb_score, imdb_votes, tomatometer),
+               (tmdb_id, imdb_id, imdb_score, imdb_votes, tomatometer, awards, fetched_at)
+           VALUES (?, ?, ?, ?, ?, ?, datetime('now'))""",
+        (tmdb_id, imdb_id, imdb_score, imdb_votes, tomatometer, awards),
     )
     db.commit()
 
@@ -1016,5 +1022,6 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
             "imdb_score": imdb_score,
             "imdb_votes": imdb_votes,
             "tomatometer": tomatometer,
+            "awards": awards,
         }
     )

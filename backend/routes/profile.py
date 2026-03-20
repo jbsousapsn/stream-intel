@@ -235,9 +235,17 @@ def get_profile():
         movie_mins = cached["movie_mins"]
         tv_mins = cached["tv_mins"]
         # Derive watchlist/watching/finished from cached columns
-        watchlist_count = cached["movies_in_library"] - cached["movies_finished"] - cached["movies_watching"]
+        watchlist_count = (
+            cached["movies_in_library"]
+            - cached["movies_finished"]
+            - cached["movies_watching"]
+        )
         s = {
-            "total_in_library": cached["movies_in_library"] + cached["tv_finished"] + cached["tv_watching"] + cached["movies_finished"] + cached["movies_watching"],
+            "total_in_library": cached["movies_in_library"]
+            + cached["tv_finished"]
+            + cached["tv_watching"]
+            + cached["movies_finished"]
+            + cached["movies_watching"],
             "favourites": cached["favourites"],
             "movies_finished": cached["movies_finished"],
             "movies_watching": cached["movies_watching"],
@@ -245,7 +253,9 @@ def get_profile():
             "tv_finished": cached["tv_finished"],
             "tv_watching": cached["tv_watching"],
             "episodes_watched": cached["episodes_watched"],
-            "top_genres": json.loads(cached["top_genres"]) if cached["top_genres"] else [],
+            "top_genres": json.loads(cached["top_genres"])
+            if cached["top_genres"]
+            else [],
             "watchlist_count": watchlist_count if watchlist_count > 0 else 0,
             "watching_count": cached["movies_watching"] + cached["tv_watching"],
             "finished_count": cached["movies_finished"] + cached["tv_finished"],

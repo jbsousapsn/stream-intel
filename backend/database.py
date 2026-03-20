@@ -192,6 +192,7 @@ CREATE TABLE IF NOT EXISTS tmdb_ratings (
     imdb_score  REAL    DEFAULT 0,
     imdb_votes  INTEGER DEFAULT 0,
     tomatometer INTEGER,
+    awards      TEXT    DEFAULT '',
     fetched_at  TEXT    DEFAULT (datetime('now'))
 );
 
@@ -542,6 +543,7 @@ def _apply_migrations(conn: sqlite3.Connection):
                 imdb_score  REAL    DEFAULT 0,
                 imdb_votes  INTEGER DEFAULT 0,
                 tomatometer INTEGER,
+                awards      TEXT    DEFAULT '',
                 fetched_at  TEXT    DEFAULT (datetime('now'))
             )
         """)
@@ -592,6 +594,12 @@ def _apply_migrations(conn: sqlite3.Connection):
             "UPDATE poster_cache SET expires_at = datetime('now', '+90 days') "
             "WHERE expires_at IS NULL"
         )
+
+    # awards column on tmdb_ratings (legacy databases may not have it)
+    tr_cols = {r[1] for r in conn.execute("PRAGMA table_info(tmdb_ratings)").fetchall()}
+    if "awards" not in tr_cols:
+        print("[DB] Adding awards column to tmdb_ratings")
+        conn.execute("ALTER TABLE tmdb_ratings ADD COLUMN awards TEXT DEFAULT ''")
 
     if "idx_titles_pt" not in idx_names:
         print("[DB] Adding compound index: idx_titles_pt")
