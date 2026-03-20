@@ -937,12 +937,13 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
 
     # Cache hit
     row = db.execute(
-        "SELECT imdb_score, imdb_votes, tomatometer, awards FROM tmdb_ratings WHERE tmdb_id = ?",
+        "SELECT imdb_id, imdb_score, imdb_votes, tomatometer, awards FROM tmdb_ratings WHERE tmdb_id = ?",
         (tmdb_id,),
     ).fetchone()
     if row:
         return jsonify(
             {
+                "imdb_id": row["imdb_id"] or "",
                 "imdb_score": row["imdb_score"],
                 "imdb_votes": row["imdb_votes"],
                 "tomatometer": row["tomatometer"],
@@ -1019,6 +1020,7 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
 
     return jsonify(
         {
+            "imdb_id": imdb_id,
             "imdb_score": imdb_score,
             "imdb_votes": imdb_votes,
             "tomatometer": tomatometer,
