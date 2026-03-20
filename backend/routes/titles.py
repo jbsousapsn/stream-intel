@@ -935,14 +935,14 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
 
     db = get_db()
 
-    # Cache hit
+    import json as _json
+
+    # Cache hit — skip if movie is missing awards_detail (legacy row, needs re-fetch)
     row = db.execute(
         "SELECT imdb_id, imdb_score, imdb_votes, tomatometer, awards, awards_detail FROM tmdb_ratings WHERE tmdb_id = ?",
         (tmdb_id,),
     ).fetchone()
-    if row:
-        import json as _json
-
+    if row and not (media_type == "movie" and not (row["awards_detail"] or "").strip()):
         det = row["awards_detail"] or ""
         try:
             parsed_detail = _json.loads(det) if det else []
@@ -1019,8 +1019,6 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
         awards = ""
 
     # Structured award detail — TMDB /movie/{id}/awards for movies
-    import json as _json
-
     awards_detail_json = ""
     if media_type == "movie":
         try:
