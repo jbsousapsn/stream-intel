@@ -1,0 +1,11 @@
+services:
+  app:
+    image: ghcr.io/jbsousapsn/stream-intel:latest
+    restart: always
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # Database persists on the host — never inside the container
+      - ./stream_intel.db:/app/stream_intel.db
+    env_file:
+      - .env
