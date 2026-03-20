@@ -927,6 +927,21 @@ def tmdb_external_ids(media_type: str, tmdb_id: int):
     return jsonify(data)
 
 
+@bp.route("/debug/tmdb-awards/<int:tmdb_id>")
+@require_auth
+def debug_tmdb_awards(tmdb_id: int):
+    """Returns raw TMDB /movie/{id}/awards response for debugging."""
+    try:
+        r = _tmdb_session.get(
+            f"{TMDB_BASE}/movie/{tmdb_id}/awards",
+            params={"api_key": TMDB_KEY},
+            timeout=8,
+        )
+        return jsonify({"status": r.status_code, "body": r.json()})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @bp.route("/tmdb/<media_type>/<int:tmdb_id>/ratings")
 @require_auth
 def tmdb_ratings(media_type: str, tmdb_id: int):
@@ -1022,10 +1037,19 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
     awards_detail_json = ""
     if media_type == "movie":
         try:
-            tmdb_awards_resp = _tmdb(f"/movie/{tmdb_id}/awards")
+            # Call without language param — awards are language-independent
+            tmdb_araw = _tmdb_session.get(
+                f"{TMDB_BASE}/movie/{tmdb_id}/awards",
+                params={"api_key": TMDB_KEY},
+                timeout=8,
+            )
+            print(f"[awards] tmdb_id={tmdb_id} status={tmdb_araw.status_code}", flush=True)
+            tmdb_awards_resp = tmdb_araw.json() if tmdb_araw.status_code == 200 else {}
+            print(f"[awards] keys={list(tmdb_awards_resp.keys())} results_len={len(tmdb_awards_resp.get('results', []))}", flush=True)
             by_name: dict = {}
             for country in tmdb_awards_resp.get("results", []):
                 data = country.get("data", {})
+                # wins array: each item has "name" = award body name
                 for win in data.get("wins", []):
                     name = (win.get("name") or "").strip()
                     if name:
@@ -1033,6 +1057,7 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
                             name, {"name": name, "wins": 0, "nominations": 0}
                         )
                         by_name[name]["wins"] += 1
+                # nominations array: same structure
                 for nom in data.get("nominations", []):
                     name = (nom.get("name") or "").strip()
                     if name:
@@ -1040,14 +1065,15 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
                             name, {"name": name, "wins": 0, "nominations": 0}
                         )
                         by_name[name]["nominations"] += 1
+            print(f"[awards] by_name count={len(by_name)}", flush=True)
             if by_name:
                 sorted_detail = sorted(
                     by_name.values(),
                     key=lambda x: (-x["wins"], -x["nominations"], x["name"]),
                 )
                 awards_detail_json = _json.dumps(sorted_detail)
-        except Exception:
-            pass
+        except Exception as _ae:
+            print(f"[awards] exception: {_ae}", flush=True)
 
     db.execute(
         """INSERT OR REPLACE INTO tmdb_ratings
