@@ -493,6 +493,88 @@ def _tmdb(path: str, **params) -> dict:
         return {}
 
 
+# Maps Wikidata award-item label keywords → canonical display name for grouping
+_AWARD_GROUP_MAP = [
+    ("academy award",          "Academy Awards"),
+    ("oscar",                  "Academy Awards"),
+    ("golden globe",           "Golden Globe Awards"),
+    ("bafta",                  "BAFTA"),
+    ("screen actors guild",    "Screen Actors Guild Awards"),
+    ("sag award",              "Screen Actors Guild Awards"),
+    ("primetime emmy",         "Primetime Emmy Awards"),
+    ("daytime emmy",           "Daytime Emmy Awards"),
+    ("emmy",                   "Emmy Awards"),
+    ("grammy",                 "Grammy Awards"),
+    ("directors guild",        "Directors Guild of America Awards"),
+    ("writers guild",          "Writers Guild of America Awards"),
+    ("producers guild",        "Producers Guild of America Awards"),
+    ("critics\' choice",       "Critics\' Choice Awards"),
+    ("critics choice",         "Critics\' Choice Awards"),
+    ("saturn award",           "Saturn Awards"),
+    ("spirit award",           "Film Independent Spirit Awards"),
+    ("independent spirit",     "Film Independent Spirit Awards"),
+    ("palm",                   "Cannes Film Festival"),
+    ("cannes",                 "Cannes Film Festival"),
+    ("venice",                 "Venice Film Festival"),
+    ("golden bear",            "Berlin International Film Festival"),
+    ("silver bear",            "Berlin International Film Festival"),
+    ("sundance",               "Sundance Film Festival"),
+    ("cesar",                  "César Awards"),
+    ("annie award",            "Annie Awards"),
+    ("costume designers guild","Costume Designers Guild Awards"),
+]
+
+
+def _fetch_wikidata_awards(imdb_id: str) -> list:
+    """Query Wikidata SPARQL for a named award-body breakdown keyed by IMDb ID.
+    Returns [{name, wins, nominations}, ...] sorted by wins desc, or [] on failure.
+    """
+    # Validate IMDb ID format before embedding in query
+    import re as _re2
+    if not imdb_id or not _re2.match(r'^tt\d+$', imdb_id):
+        return []
+    query = (
+        'SELECT ?awardLabel (SUM(?w) AS ?wins) (SUM(?n) AS ?noms) WHERE {'
+        f'  ?film wdt:P345 "{imdb_id}" .'
+        '  { ?film p:P166 ?ws . ?ws ps:P166 ?award . BIND(1 AS ?w) BIND(0 AS ?n) }'
+        '  UNION'
+        '  { ?film p:P1411 ?ns . ?ns ps:P1411 ?award . BIND(0 AS ?w) BIND(1 AS ?n) }'
+        '  SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }'
+        '} GROUP BY ?awardLabel ORDER BY DESC(?wins) DESC(?noms)'
+    )
+    try:
+        r = _tmdb_session.get(
+            "https://query.wikidata.org/sparql",
+            params={"query": query, "format": "json"},
+            headers={"User-Agent": "StreamIntel/1.0 (https://stream-intel.up.railway.app)"},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return []
+        bindings = r.json().get("results", {}).get("bindings", [])
+        by_group: dict = {}
+        for row in bindings:
+            label = row.get("awardLabel", {}).get("value", "")
+            wins  = int(row.get("wins", {}).get("value", 0))
+            noms  = int(row.get("noms", {}).get("value", 0))
+            if not label:
+                continue
+            label_lower = label.lower()
+            group = None
+            for key, canonical in _AWARD_GROUP_MAP:
+                if key in label_lower:
+                    group = canonical
+                    break
+            if group is None:
+                continue  # minor / unknown awards — counted in "Other" via OMDB totals
+            by_group.setdefault(group, {"name": group, "wins": 0, "nominations": 0})
+            by_group[group]["wins"]        += wins
+            by_group[group]["nominations"] += noms
+        return sorted(by_group.values(), key=lambda x: (-x["wins"], -x["nominations"], x["name"]))
+    except Exception:
+        return []
+
+
 # ── /api/upcoming ─────────────────────────────────────────────────────────────
 
 ONGOING_STATUSES = {"Returning Series", "In Production", "Planned", "Pilot"}
@@ -1018,59 +1100,66 @@ def tmdb_ratings(media_type: str, tmdb_id: int):
     if awards == "N/A":
         awards = ""
 
-    # Structured award detail — parse named award bodies from the OMDB awards string.
-    # TMDB v3 has no /awards endpoint; OMDB mentions top awards by name in the string.
+    # Structured award detail — query Wikidata SPARQL for named bodies, fall back
+    # to OMDB regex if Wikidata returns nothing (film not indexed / too obscure).
+    import re as _re
     awards_detail_json = ""
     if awards:
-        import re as _re
-        # Patterns: each is (regex, canonical_name, kind)
-        # kind = 'win' or 'nom'
-        _award_patterns = [
-            (_re.compile(r"[Ww]on (\d+) Oscar",         _re.I), "Academy Awards",        "win"),
-            (_re.compile(r"[Nn]ominated for (\d+) Oscar",_re.I), "Academy Awards",        "nom"),
-            (_re.compile(r"[Ww]on (\d+) Golden Globe",   _re.I), "Golden Globe Awards",   "win"),
-            (_re.compile(r"Nominated for (\d+) Golden Globe", _re.I), "Golden Globe Awards", "nom"),
-            (_re.compile(r"[Ww]on (\d+) BAFTA",         _re.I), "BAFTA Film Awards",     "win"),
-            (_re.compile(r"Nominated for (\d+) BAFTA",   _re.I), "BAFTA Film Awards",     "nom"),
-            (_re.compile(r"[Ww]on (\d+) Emmy",           _re.I), "Primetime Emmy Awards", "win"),
-            (_re.compile(r"Nominated for (\d+) Emmy",    _re.I), "Primetime Emmy Awards", "nom"),
-            (_re.compile(r"[Ww]on (\d+) Grammy",         _re.I), "Grammy Awards",         "win"),
-            (_re.compile(r"Nominated for (\d+) Grammy",  _re.I), "Grammy Awards",         "nom"),
-            (_re.compile(r"[Ww]on (\d+) Screen Actors Guild", _re.I), "Screen Actors Guild Awards", "win"),
-            (_re.compile(r"Nominated for (\d+) Screen Actors Guild", _re.I), "Screen Actors Guild Awards", "nom"),
-            (_re.compile(r"[Ww]on (\d+) Critics.{0,10}Choice", _re.I), "Critics' Choice Awards", "win"),
-            (_re.compile(r"Nominated for (\d+) Critics.{0,10}Choice", _re.I), "Critics' Choice Awards", "nom"),
-            (_re.compile(r"[Ww]on (\d+) Directors Guild", _re.I), "Directors Guild of America", "win"),
-            (_re.compile(r"Nominated for (\d+) Directors Guild", _re.I), "Directors Guild of America", "nom"),
-            (_re.compile(r"[Ww]on (\d+) Writers Guild", _re.I), "Writers Guild of America", "win"),
-            (_re.compile(r"Nominated for (\d+) Writers Guild", _re.I), "Writers Guild of America", "nom"),
-        ]
-        named: dict = {}
-        named_wins = 0
-        named_noms = 0
-        for pat, canon, kind in _award_patterns:
-            m = pat.search(awards)
-            if m:
-                count = int(m.group(1))
-                named.setdefault(canon, {"name": canon, "wins": 0, "nominations": 0})
-                if kind == "win":
-                    named[canon]["wins"] += count
-                    named_wins += count
-                else:
-                    named[canon]["nominations"] += count
-                    named_noms += count
-        # Total wins/noms from OMDB summary line
+        # OMDB totals (always available)
         tw_m = _re.search(r"(\d+)\s+win", awards, _re.I)
         tn_m = _re.search(r"(\d+)\s+nomination", awards, _re.I)
         total_wins = int(tw_m.group(1)) if tw_m else 0
         total_noms = int(tn_m.group(1)) if tn_m else 0
-        other_wins = max(0, total_wins - named_wins)
-        other_noms = max(0, total_noms - named_noms)
-        detail_list = sorted(named.values(), key=lambda x: (-x["wins"], -x["nominations"], x["name"]))
-        if other_wins > 0 or other_noms > 0:
-            detail_list.append({"name": "Other Awards", "wins": other_wins, "nominations": other_noms})
-        if detail_list:
+
+        # 1️⃣  Try Wikidata (richer, covers Academy Awards, BAFTA, Globes, SAG, etc.)
+        wd_detail = _fetch_wikidata_awards(imdb_id or "")
+        if wd_detail:
+            wd_wins = sum(x["wins"]        for x in wd_detail)
+            wd_noms = sum(x["nominations"] for x in wd_detail)
+            other_wins = max(0, total_wins - wd_wins)
+            other_noms = max(0, total_noms - wd_noms)
+            detail_list = list(wd_detail)
+            if other_wins > 0 or other_noms > 0:
+                detail_list.append({"name": "Other Awards", "wins": other_wins, "nominations": other_noms})
             awards_detail_json = _json.dumps(detail_list)
+        else:
+            # 2️⃣  Fallback: extract what OMDB explicitly names in the summary string
+            _omdb_patterns = [
+                (_re.compile(r"[Ww]on (\d+) Oscar",                  _re.I), "Academy Awards",                 "win"),
+                (_re.compile(r"[Nn]ominated for (\d+) Oscar",        _re.I), "Academy Awards",                 "nom"),
+                (_re.compile(r"[Ww]on (\d+) Golden Globe",           _re.I), "Golden Globe Awards",            "win"),
+                (_re.compile(r"[Nn]ominated for (\d+) Golden Globe", _re.I), "Golden Globe Awards",            "nom"),
+                (_re.compile(r"[Ww]on (\d+) BAFTA",                 _re.I), "BAFTA",                          "win"),
+                (_re.compile(r"[Nn]ominated for (\d+) BAFTA",       _re.I), "BAFTA",                          "nom"),
+                (_re.compile(r"[Ww]on (\d+) Emmy",                  _re.I), "Emmy Awards",                    "win"),
+                (_re.compile(r"[Nn]ominated for (\d+) Emmy",        _re.I), "Emmy Awards",                    "nom"),
+                (_re.compile(r"[Ww]on (\d+) Grammy",                 _re.I), "Grammy Awards",                  "win"),
+                (_re.compile(r"[Nn]ominated for (\d+) Grammy",      _re.I), "Grammy Awards",                  "nom"),
+                (_re.compile(r"[Ww]on (\d+) Screen Actors Guild",   _re.I), "Screen Actors Guild Awards",     "win"),
+                (_re.compile(r"[Nn]ominated for (\d+) Screen Actors Guild", _re.I), "Screen Actors Guild Awards", "nom"),
+                (_re.compile(r"[Ww]on (\d+) Critics.{0,10}Choice",  _re.I), "Critics\' Choice Awards",        "win"),
+                (_re.compile(r"[Nn]ominated for (\d+) Critics.{0,10}Choice", _re.I), "Critics\' Choice Awards", "nom"),
+            ]
+            named: dict = {}
+            named_wins = named_noms = 0
+            for pat, canon, kind in _omdb_patterns:
+                m = pat.search(awards)
+                if m:
+                    count = int(m.group(1))
+                    named.setdefault(canon, {"name": canon, "wins": 0, "nominations": 0})
+                    if kind == "win":
+                        named[canon]["wins"] += count
+                        named_wins += count
+                    else:
+                        named[canon]["nominations"] += count
+                        named_noms += count
+            other_wins = max(0, total_wins - named_wins)
+            other_noms = max(0, total_noms - named_noms)
+            detail_list = sorted(named.values(), key=lambda x: (-x["wins"], -x["nominations"], x["name"]))
+            if other_wins > 0 or other_noms > 0:
+                detail_list.append({"name": "Other Awards", "wins": other_wins, "nominations": other_noms})
+            if detail_list:
+                awards_detail_json = _json.dumps(detail_list)
 
     db.execute(
         """INSERT OR REPLACE INTO tmdb_ratings
