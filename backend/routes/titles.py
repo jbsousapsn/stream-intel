@@ -116,14 +116,14 @@ def get_titles():
     if args.get("year_from"):
         try:
             year_from = int(args["year_from"])
-            conditions.append("(t.release_year IS NULL OR t.release_year >= ?)")
+            conditions.append("t.release_year >= ?")
             params.append(year_from)
         except (ValueError, TypeError):
             pass
     if args.get("year_to"):
         try:
             year_to = int(args["year_to"])
-            conditions.append("(t.release_year IS NULL OR t.release_year <= ?)")
+            conditions.append("t.release_year <= ?")
             params.append(year_to)
         except (ValueError, TypeError):
             pass
