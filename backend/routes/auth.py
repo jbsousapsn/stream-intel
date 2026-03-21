@@ -116,10 +116,12 @@ def _redirect_uri() -> str:
 @bp.route("/debug-redirect", methods=["GET"])
 def debug_redirect():
     """Temporary: shows exactly what redirect_uri will be sent to Google and why."""
+    client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
     return jsonify(
         {
             "redirect_uri": _redirect_uri(),
             "GOOGLE_REDIRECT_URI": os.environ.get("GOOGLE_REDIRECT_URI"),
+            "GOOGLE_CLIENT_ID_prefix": client_id[:30] + "..." if len(client_id) > 30 else client_id,
             "RAILWAY_PUBLIC_DOMAIN": os.environ.get("RAILWAY_PUBLIC_DOMAIN"),
             "RAILWAY_STATIC_URL": os.environ.get("RAILWAY_STATIC_URL"),
             "RAILWAY_ENVIRONMENT": os.environ.get("RAILWAY_ENVIRONMENT"),
