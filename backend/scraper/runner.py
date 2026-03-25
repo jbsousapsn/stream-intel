@@ -113,6 +113,7 @@ MULTI_SORT = False
 # Example: SCRAPER_PROXY_URL=http://user:pass@proxy.provider.com:port
 PROXY_URL: Optional[str] = os.getenv("SCRAPER_PROXY_URL") or None
 MAX_DELAY = 2.5
+INTER_REGION_DELAY = 5  # seconds between regions when running without a proxy
 MIN_IMDB_VOTES = 200  # titles with fewer votes are filtered out (0 = disabled)
 
 # ── Database write ────────────────────────────────────────────────────────────
@@ -347,6 +348,8 @@ def run_scrape(
                 f"   [{region}] Staggering start by {stagger}s to avoid simultaneous proxy hits"
             )
             time.sleep(stagger)
+        elif idx > 0 and not PROXY_URL:
+            time.sleep(INTER_REGION_DELAY)
         session = make_session(proxy=PROXY_URL)
         warm_session(session)
         if PROXY_URL:
