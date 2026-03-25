@@ -113,7 +113,7 @@ MULTI_SORT = False
 # Example: SCRAPER_PROXY_URL=http://user:pass@proxy.provider.com:port
 PROXY_URL: Optional[str] = os.getenv("SCRAPER_PROXY_URL") or None
 MAX_DELAY = 2.5
-MIN_IMDB_VOTES = 1_000  # titles with fewer votes are filtered out (0 = disabled)
+MIN_IMDB_VOTES = 200  # titles with fewer votes are filtered out (0 = disabled)
 
 # ── Database write ────────────────────────────────────────────────────────────
 
