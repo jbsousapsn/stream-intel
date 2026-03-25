@@ -96,8 +96,8 @@ def _redirect_uri() -> str:
     Priority:
       1. GOOGLE_REDIRECT_URI env var — explicit override, always wins.
       2. Derive from request.host — use https for anything that isn't localhost.
-         This works correctly behind Railway's proxy without needing ProxyFix
-         or any Railway-specific env vars.
+         This works correctly behind nginx/caddy reverse proxy without needing
+         any host-specific env vars.
     """
     explicit = os.environ.get("GOOGLE_REDIRECT_URI")
     if explicit:
@@ -105,7 +105,7 @@ def _redirect_uri() -> str:
     try:
         host = (
             request.host
-        )  # e.g. "web-production-06289.up.railway.app" or "localhost:5000"
+        )  # e.g. "api.yourdomain.com" or "localhost:5000"
         is_local = host.startswith("localhost") or host.startswith("127.")
         scheme = "http" if is_local else "https"
         return f"{scheme}://{host}/api/auth/google-callback"
@@ -121,10 +121,10 @@ def debug_redirect():
         {
             "redirect_uri": _redirect_uri(),
             "GOOGLE_REDIRECT_URI": os.environ.get("GOOGLE_REDIRECT_URI"),
-            "GOOGLE_CLIENT_ID_prefix": client_id[:30] + "..." if len(client_id) > 30 else client_id,
-            "RAILWAY_PUBLIC_DOMAIN": os.environ.get("RAILWAY_PUBLIC_DOMAIN"),
-            "RAILWAY_STATIC_URL": os.environ.get("RAILWAY_STATIC_URL"),
-            "RAILWAY_ENVIRONMENT": os.environ.get("RAILWAY_ENVIRONMENT"),
+            "GOOGLE_CLIENT_ID_prefix": client_id[:30] + "..."
+            if len(client_id) > 30
+            else client_id,
+            "PUBLIC_DOMAIN": os.environ.get("PUBLIC_DOMAIN"),
             "SERVER_NAME": os.environ.get("SERVER_NAME"),
             "request_url_root": request.url_root,
         }

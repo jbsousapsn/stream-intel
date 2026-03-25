@@ -10,12 +10,12 @@ def _default_redirect_uri() -> str:
     """Build the Google OAuth callback URI.
     Priority:
       1. GOOGLE_REDIRECT_URI env var (explicit override — always wins)
-      2. RAILWAY_PUBLIC_DOMAIN env var (auto-injected by Railway)
+      2. PUBLIC_DOMAIN env var (e.g. api.yourdomain.com)
       3. Localhost fallback for local dev
     """
-    railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
-    if railway_domain:
-        return f"https://{railway_domain}/api/auth/google-callback"
+    public_domain = os.getenv("PUBLIC_DOMAIN")
+    if public_domain:
+        return f"https://{public_domain}/api/auth/google-callback"
     return "http://localhost:5000/api/auth/google-callback"
 
 

@@ -1,5 +1,5 @@
 """
-scrape_and_push.py — Run the scraper locally then push only the titles to Railway.
+scrape_and_push.py — Run the scraper locally then push only the titles to the server.
 
 Usage:
     python scrape_and_push.py                        # scrape 6 key regions (fast, ~60-90 min)
@@ -9,7 +9,7 @@ Usage:
     python scrape_and_push.py --push-only            # skip scrape, just push existing local DB
 
 The local scrape writes to stream_intel_local.db (kept separate from your dev DB).
-After the scrape, the file is posted to /api/push-titles on Railway, which merges
+After the scrape, the file is posted to /api/push-titles on the server, which merges
 the titles into production WITHOUT touching any user data (watchlists, etc.).
 """
 
@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BASE = os.getenv("RAILWAY_URL", "https://stream-intel.up.railway.app")
+BASE = os.getenv("SERVER_URL", "https://stream-intel.up.railway.app")
 SECRET = os.getenv("MIGRATION_SECRET", "boaspessoal213")
 LOCAL_DB = Path(__file__).parent / "stream_intel_local.db"
 

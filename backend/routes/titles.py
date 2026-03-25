@@ -496,26 +496,26 @@ def _tmdb(path: str, **params) -> dict:
 # Prefix-based grouping rules: first match wins.
 # Longer/more-specific prefixes must come before shorter ones.
 _AWARD_PREFIX_MAP = [
-    ("Academy Award",              "Academy Awards"),
-    ("BAFTA Award",                "BAFTA Awards"),
-    ("BAFTA",                      "BAFTA Awards"),
-    ("Golden Globe Award",         "Golden Globe Awards"),
-    ("Primetime Emmy Award",       "Primetime Emmy Awards"),
-    ("Daytime Emmy Award",         "Daytime Emmy Awards"),
-    ("Emmy Award",                 "Emmy Awards"),
-    ("Screen Actors Guild Award",  "Screen Actors Guild Awards"),
-    ("Grammy Award",               "Grammy Awards"),
-    ("Saturn Award",               "Saturn Awards"),
-    ("Critics' Choice Movie Award","Critics' Choice Awards"),
-    ("Critics' Choice Award",      "Critics' Choice Awards"),
+    ("Academy Award", "Academy Awards"),
+    ("BAFTA Award", "BAFTA Awards"),
+    ("BAFTA", "BAFTA Awards"),
+    ("Golden Globe Award", "Golden Globe Awards"),
+    ("Primetime Emmy Award", "Primetime Emmy Awards"),
+    ("Daytime Emmy Award", "Daytime Emmy Awards"),
+    ("Emmy Award", "Emmy Awards"),
+    ("Screen Actors Guild Award", "Screen Actors Guild Awards"),
+    ("Grammy Award", "Grammy Awards"),
+    ("Saturn Award", "Saturn Awards"),
+    ("Critics' Choice Movie Award", "Critics' Choice Awards"),
+    ("Critics' Choice Award", "Critics' Choice Awards"),
     ("Directors Guild of America Award", "Directors Guild of America Awards"),
-    ("Writers Guild of America Award",   "Writers Guild of America Awards"),
+    ("Writers Guild of America Award", "Writers Guild of America Awards"),
     ("Producers Guild of America Award", "Producers Guild of America Awards"),
-    ("MTV Movie Award",            "MTV Movie Awards"),
-    ("Annie Award",                "Annie Awards"),
-    ("César Award",                "César Awards"),
-    ("Independent Spirit Award",   "Film Independent Spirit Awards"),
-    ("Palm d'Or",                  "Cannes Film Festival"),
+    ("MTV Movie Award", "MTV Movie Awards"),
+    ("Annie Award", "Annie Awards"),
+    ("César Award", "César Awards"),
+    ("Independent Spirit Award", "Film Independent Spirit Awards"),
+    ("Palm d'Or", "Cannes Film Festival"),
 ]
 
 
@@ -544,7 +544,7 @@ def _fetch_wikidata_awards(imdb_id: str) -> list:
             "https://query.wikidata.org/sparql",
             params={"query": query, "format": "json"},
             headers={
-                "User-Agent": "StreamIntel/1.0 (https://stream-intel.up.railway.app)"
+                "User-Agent": "StreamIntel/1.0 (https://github.com/jbsousapsn/stream-intel)"
             },
             timeout=15,
         )
@@ -554,8 +554,8 @@ def _fetch_wikidata_awards(imdb_id: str) -> list:
         by_group: dict = {}
         for row in bindings:
             label = row.get("awardLabel", {}).get("value", "")
-            wins  = int(row.get("wins", {}).get("value", 0))
-            noms  = int(row.get("noms", {}).get("value", 0))
+            wins = int(row.get("wins", {}).get("value", 0))
+            noms = int(row.get("noms", {}).get("value", 0))
             if not label or _re2.match(r"^Q\d+$", label):
                 continue
             # Find canonical group name by prefix
@@ -568,7 +568,7 @@ def _fetch_wikidata_awards(imdb_id: str) -> list:
             if group is None:
                 group = label
             by_group.setdefault(group, {"name": group, "wins": 0, "nominations": 0})
-            by_group[group]["wins"]        += wins
+            by_group[group]["wins"] += wins
             by_group[group]["nominations"] += noms
         return sorted(
             by_group.values(), key=lambda x: (-x["wins"], -x["nominations"], x["name"])
@@ -1033,7 +1033,7 @@ def debug_wikidata_awards(imdb_id: str):
             "https://query.wikidata.org/sparql",
             params={"query": query, "format": "json"},
             headers={
-                "User-Agent": "StreamIntel/1.0 (https://stream-intel.up.railway.app)"
+                "User-Agent": "StreamIntel/1.0 (https://github.com/jbsousapsn/stream-intel)"
             },
             timeout=15,
         )
