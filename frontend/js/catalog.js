@@ -406,6 +406,14 @@ function runScraper() {
   const minVotes  = document.getElementById('minVotesSelect').value;
   const multiSort = document.getElementById('multiSortCheck')?.checked ? '1' : '0';
   const proxyUrl  = document.getElementById('proxyInput')?.value.trim() || '';
+  // Validate proxy URL: must include a scheme AND credentials (@ sign).
+  // A bare host:port like "brd.superproxy.io:33335" has no credentials and
+  // will always get 407 Proxy Authentication Required from authenticated proxies.
+  if (proxyUrl && (!proxyUrl.includes('://') || !proxyUrl.includes('@'))) {
+    btn.disabled = false; btn.textContent = 'Run Scraper';
+    appendLog('ERROR: Proxy URL must include scheme and credentials, e.g. http://user:pass@host:port', 'err');
+    return;
+  }
   const qs = new URLSearchParams({min_votes: minVotes, multi_sort: multiSort});
   if (proxyUrl) qs.set('proxy_url', proxyUrl);
   const es = new EventSource(`/api/run/${mode}/${regions}?${qs}`);
